@@ -1,0 +1,13 @@
+[package]
+name = "rgraphics"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4.22"
+wgpu = "22.1.0"
+winit = "0.30.5"
+pollster = "0.3.0"
+
+[dev-dependencies]
+simplelog = "0.12.2"
