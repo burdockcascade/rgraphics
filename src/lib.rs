@@ -1,11 +1,10 @@
-mod state;
+mod gpu;
 mod application;
 
-use crate::application::StateApplication;
+use crate::application::ApplicationState;
 
 use winit::application::ApplicationHandler;
 use winit::event_loop::EventLoop;
-use winit::window::WindowAttributes;
 
 pub trait EventHandler {
     fn on_init(&mut self);
@@ -13,15 +12,15 @@ pub trait EventHandler {
     fn on_close(&mut self);
 }
 
-pub struct RGraphics {
-    window_state : StateApplication
+pub struct IgniteFX {
+    window_state : ApplicationState
 }
 
-impl RGraphics {
+impl IgniteFX {
 
     pub fn new(height : i32, width : i32, title : &str) -> Self {
-        RGraphics {
-            window_state: StateApplication::new(height, width, title)
+        IgniteFX {
+            window_state: ApplicationState::new(height, width, title)
         }
     }
 
