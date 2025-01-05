@@ -1,9 +1,9 @@
 use log::{debug, error, warn};
-use crate::gpu::Display;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
+use crate::graphics::gpu::Display;
 
 pub struct ApplicationState {
     window_attributes: WindowAttributes,

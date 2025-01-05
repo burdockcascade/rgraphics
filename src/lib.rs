@@ -1,4 +1,4 @@
-mod gpu;
+mod graphics;
 mod application;
 
 use crate::application::ApplicationState;

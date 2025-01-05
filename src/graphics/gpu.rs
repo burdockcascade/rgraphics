@@ -1,11 +1,12 @@
 use std::sync::Arc;
+use bytemuck::{Pod, Zeroable};
+use log::{info, trace};
 use pollster::FutureExt;
 use wgpu::{Adapter, AdapterInfo, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities};
+use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
-use bytemuck::{Pod, Zeroable};
-use log::info;
-use wgpu::util::DeviceExt;
+use crate::graphics::draw::{Color, Mesh};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -35,37 +36,6 @@ impl Vertex {
     }
 }
 
-const VERTICES: &[Vertex] = &[
-    Vertex {
-        position: [-0.0868241, 0.49240386, 0.0],
-        color: [0.5, 0.0, 0.5],
-    }, // A
-    Vertex {
-        position: [-0.49513406, 0.06958647, 0.0],
-        color: [0.5, 0.0, 0.5],
-    }, // B
-    Vertex {
-        position: [-0.21918549, -0.44939706, 0.0],
-        color: [0.5, 0.0, 0.5],
-    }, // C
-    Vertex {
-        position: [0.35966998, -0.3473291, 0.0],
-        color: [0.5, 0.0, 0.5],
-    }, // D
-    Vertex {
-        position: [0.44147372, 0.2347359, 0.0],
-        color: [0.5, 0.0, 0.5],
-    }, // E
-];
-
-const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4, /* padding */ 0];
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct Uniform {
-    transform: [[f32; 4]; 4], // 4x4 transformation matrix
-}
-
 pub struct Display {
     surface: Surface<'static>,
     adapter: Adapter,
@@ -73,8 +43,7 @@ pub struct Display {
     queue: Queue,
     config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer, // new
-    index_buffer: wgpu::Buffer, // new
+    meshes: Vec<Mesh>,
     size: PhysicalSize<u32>,
     window: Arc<Window>,
 }
@@ -93,21 +62,12 @@ impl Display {
         let render_pipeline_layout = Self::create_pipeline_layout(&device);
         let render_pipeline = Self::create_render_pipeline(&device, &render_pipeline_layout, &config);
 
-        let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsages::VERTEX,
-            }
-        );
-
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
         surface.configure(&device, &config);
+
+        let meshes = vec![
+            Mesh::square(Color::Green),
+            Mesh::triangle(Color::Red),
+        ];
 
         Self {
             surface,
@@ -117,8 +77,7 @@ impl Display {
             config,
             size,
             render_pipeline,
-            vertex_buffer,
-            index_buffer,
+            meshes,
             window: window_arc,
         }
     }
@@ -183,7 +142,7 @@ impl Display {
 
     fn create_render_pipeline(device: &Device, layout: &wgpu::PipelineLayout, config: &wgpu::SurfaceConfiguration) -> wgpu::RenderPipeline {
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+        let shader = device.create_shader_module(wgpu::include_wgsl!("../shader.wgsl"));
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
@@ -245,6 +204,9 @@ impl Display {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+
+        trace!("Start frame");
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -256,6 +218,15 @@ impl Display {
                 label: Some("Render Encoder"),
             });
 
+        let background_rgba = Color::Silver.to_rgba();
+
+        let background_color = wgpu::Color {
+            r: background_rgba[0] as f64,
+            g: background_rgba[1] as f64,
+            b: background_rgba[2] as f64,
+            a: 1.0,
+        };
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -263,12 +234,7 @@ impl Display {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.9,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(background_color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -278,14 +244,21 @@ impl Display {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
+
+            for mesh in &self.meshes {
+                let vertex_buffer = mesh.vertex_buffer(&self.device);
+                let index_buffer = mesh.index_buffer(&self.device);
+                render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
+            }
 
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+
+        trace!("End frame");
 
         Ok(())
     }
