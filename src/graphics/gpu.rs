@@ -1,18 +1,21 @@
 use std::sync::Arc;
 use bytemuck::{Pod, Zeroable};
+use cgmath::{Matrix4, Vector3};
 use log::{info, trace};
 use pollster::FutureExt;
-use wgpu::{Adapter, AdapterInfo, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities};
+use wgpu::{Adapter, AdapterInfo, BindGroup, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities};
+use wgpu::core::command::DrawKind::Draw;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
-use crate::graphics::draw::{Color, Mesh};
+use crate::graphics::draw::{Color, DrawCommand, Mesh};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Vertex {
     pub position: [f32; 3],
     pub color: [f32; 3],
+    pub uv: [f32; 2]
 }
 
 impl Vertex {
@@ -30,7 +33,12 @@ impl Vertex {
                     offset: size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
-                }
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 6]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
             ]
         }
     }
@@ -43,7 +51,7 @@ pub struct Display {
     queue: Queue,
     config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
-    meshes: Vec<Mesh>,
+    draw_commands: Vec<DrawCommand>,
     size: PhysicalSize<u32>,
     window: Arc<Window>,
 }
@@ -64,9 +72,17 @@ impl Display {
 
         surface.configure(&device, &config);
 
-        let meshes = vec![
-            Mesh::square(Color::Green),
-            Mesh::triangle(Color::Red),
+        let draw_commands = vec![
+            DrawCommand {
+                mesh: Mesh::new_square(Color::RED),
+                color: Color::BLUE,
+                transform: Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0)),
+            },
+            DrawCommand {
+                mesh: Mesh::new_triangle(Color::BLUE),
+                color: Color::RED,
+                transform: Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0)),
+            },
         ];
 
         Self {
@@ -77,7 +93,7 @@ impl Display {
             config,
             size,
             render_pipeline,
-            meshes,
+            draw_commands,
             window: window_arc,
         }
     }
@@ -133,16 +149,64 @@ impl Display {
     }
 
     fn create_pipeline_layout(device: &Device) -> wgpu::PipelineLayout {
+        let transform_bind_group_layout = Display::create_transform_bind_layout(&device);
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[],
+            bind_group_layouts: &[
+                &transform_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         })
     }
 
+    fn create_transform_bind_layout(device: &Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("transform_bind_group_layout"),
+        })
+    }
+
+    fn create_transform_bind_group(device: &Device, transform: [[f32; 4]; 4]) -> BindGroup {
+
+        // 1. Define the BindGroupLayout
+        let transform_bind_group_layout = Display::create_transform_bind_layout(&device);
+
+        // 2. Create the buffer to hold the transform data
+        let transform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Transform Buffer"),
+            contents: bytemuck::cast_slice(&transform),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // 3. Create the BindGroup
+        let transform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &transform_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: transform_buffer.as_entire_binding(),
+                },
+            ],
+            label: Some("transform_bind_group"),
+        });
+
+        transform_bind_group
+    }
+
     fn create_render_pipeline(device: &Device, layout: &wgpu::PipelineLayout, config: &wgpu::SurfaceConfiguration) -> wgpu::RenderPipeline {
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("../shader.wgsl"));
+        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
@@ -203,6 +267,14 @@ impl Display {
 
     }
 
+    fn create_left_shift_matrix(shift_amount: f32) -> Matrix4<f32> {
+        // Create a translation vector (shift to the left by 'shift_amount')
+        let translation = Vector3::new(-shift_amount, 0.0, 0.0);
+
+        // Create the transformation matrix
+        Matrix4::from_translation(translation)
+    }
+
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
 
         trace!("Start frame");
@@ -218,13 +290,13 @@ impl Display {
                 label: Some("Render Encoder"),
             });
 
-        let background_rgba = Color::Silver.to_rgba();
+        let background_rgba = Color::WHITE;
 
         let background_color = wgpu::Color {
-            r: background_rgba[0] as f64,
-            g: background_rgba[1] as f64,
-            b: background_rgba[2] as f64,
-            a: 1.0,
+            r: background_rgba.r as f64,
+            g: background_rgba.g as f64,
+            b: background_rgba.b as f64,
+            a: background_rgba.a as f64,
         };
 
         {
@@ -245,7 +317,14 @@ impl Display {
 
             render_pass.set_pipeline(&self.render_pipeline);
 
-            for mesh in &self.meshes {
+            for command in &self.draw_commands {
+
+                // transform bind group
+                let bind_group = Display::create_transform_bind_group(&self.device, command.transform.into());
+                render_pass.set_bind_group(0, &bind_group, &[]);
+
+                let mesh = &command.mesh;
+
                 let vertex_buffer = mesh.vertex_buffer(&self.device);
                 let index_buffer = mesh.index_buffer(&self.device);
                 render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));

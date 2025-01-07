@@ -12,14 +12,14 @@ pub trait EventHandler {
     fn on_close(&mut self);
 }
 
-pub struct IgniteFX {
+pub struct Raymond {
     window_state : ApplicationState
 }
 
-impl IgniteFX {
+impl Raymond {
 
-    pub fn new(height : i32, width : i32, title : &str) -> Self {
-        IgniteFX {
+    pub fn create_window(height : i32, width : i32, title : &str) -> Self {
+        Raymond {
             window_state: ApplicationState::new(height, width, title)
         }
     }
