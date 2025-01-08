@@ -72,19 +72,6 @@ impl Display {
 
         surface.configure(&device, &config);
 
-        let draw_commands = vec![
-            DrawCommand {
-                mesh: Mesh::new_square(Color::RED),
-                color: Color::BLUE,
-                transform: Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0)),
-            },
-            DrawCommand {
-                mesh: Mesh::new_triangle(Color::BLUE),
-                color: Color::RED,
-                transform: Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0)),
-            },
-        ];
-
         Self {
             surface,
             adapter,
@@ -93,9 +80,14 @@ impl Display {
             config,
             size,
             render_pipeline,
-            draw_commands,
+            draw_commands: vec![],
             window: window_arc,
         }
+    }
+
+    pub fn set_draw_commands(&mut self, command: Vec<DrawCommand>) {
+        self.draw_commands.clear();
+        self.draw_commands = command;
     }
 
     pub fn get_adaptor_info(&self) -> AdapterInfo {

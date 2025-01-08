@@ -1,11 +1,13 @@
 mod graphics;
 
-use log::{debug, error};
+use cgmath::{Matrix4, Vector3};
+use log::{debug, error, info};
 
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowAttributes, WindowId};
+use crate::graphics::draw::DrawCommand;
 use crate::graphics::gpu::Display;
 
 pub trait EventHandler {
@@ -16,6 +18,7 @@ pub trait EventHandler {
 
 pub struct Raymond {
     window_attributes: WindowAttributes,
+    draw_commands: Vec<DrawCommand>,
     display: Option<Display>,
 }
 
@@ -28,8 +31,27 @@ impl Raymond {
 
         Self {
             window_attributes,
-            display: None
+            display: None,
+            draw_commands: Vec::new(),
         }
+    }
+
+    pub fn draw_triangle(&mut self) -> &mut Self {
+        self.draw_commands.push(DrawCommand {
+            mesh: graphics::draw::Mesh::new_triangle(graphics::draw::Color::GREEN),
+            color: graphics::draw::Color::GREEN,
+            transform: Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0)),
+        });
+        self
+    }
+
+    pub fn draw_square(&mut self) -> &mut Self {
+        self.draw_commands.push(DrawCommand {
+            mesh: graphics::draw::Mesh::new_square(graphics::draw::Color::GREEN),
+            color: graphics::draw::Color::GREEN,
+            transform: Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0)),
+        });
+        self
     }
 
     pub fn run(&mut self, event_handler : &mut dyn EventHandler) {
@@ -53,7 +75,9 @@ impl ApplicationHandler for Raymond {
         let window = event_loop
             .create_window(self.window_attributes.clone())
             .unwrap();
-        self.display = Some(Display::new(window));
+
+        let display = Display::new(window);
+        self.display = Some(display);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
@@ -78,6 +102,8 @@ impl ApplicationHandler for Raymond {
                 graphics_state.resize(physical_size);
             }
             WindowEvent::RedrawRequested => {
+                let commands = self.draw_commands.clone();
+                graphics_state.set_draw_commands(commands);
                 graphics_state.render().unwrap();
             }
             _ => {

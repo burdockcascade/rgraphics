@@ -1,5 +1,5 @@
 pub mod gpu;
-mod draw;
+pub(crate) mod draw;
 
 use bytemuck::{Pod, Zeroable};
 use pollster::FutureExt;

@@ -23,7 +23,9 @@ fn main() {
     // enable trace logging
     TermLogger::init(LevelFilter::Info, Config::default(), TerminalMode::Mixed, ColorChoice::Auto).expect("TODO: panic message");
 
-    Raymond::create_window(600, 800, "Window Example")
+    let win = Raymond::create_window(600, 800, "Window Example")
+        .draw_square()
+        .draw_triangle()
         .run(&mut MyGame);
 
 }

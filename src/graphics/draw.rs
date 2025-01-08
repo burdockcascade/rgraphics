@@ -3,6 +3,7 @@ use wgpu::Device;
 use wgpu::util::DeviceExt;
 use crate::graphics::gpu::Vertex;
 
+#[derive(Clone, Debug)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
@@ -29,12 +30,14 @@ impl Color {
 
 }
 
+#[derive(Clone, Debug)]
 pub struct DrawCommand {
     pub mesh: Mesh,
     pub color: Color,
     pub transform: Matrix4<f32>
 }
 
+#[derive(Clone, Debug)]
 pub struct Mesh {
     vertices: &'static [Vertex],
     pub(crate) indices: &'static [u16],
