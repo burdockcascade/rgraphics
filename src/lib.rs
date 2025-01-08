@@ -1,13 +1,13 @@
-mod graphics;
+pub mod graphics;
 
-use cgmath::{Matrix4, Vector3};
+use cgmath::{Matrix4, Vector2, Vector3};
 use log::{debug, error, info};
 
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowAttributes, WindowId};
-use crate::graphics::draw::DrawCommand;
+use crate::graphics::draw::{Color, DrawCommand};
 use crate::graphics::gpu::Display;
 
 pub trait EventHandler {
@@ -36,20 +36,34 @@ impl Raymond {
         }
     }
 
-    pub fn draw_triangle(&mut self) -> &mut Self {
+    pub fn draw_triangle(&mut self, rotation: f32, color: Color) -> &mut Self {
+
+        // base transformation
+        let transform = Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0));
+
+        // rotation
+        let transform = transform * Matrix4::from_angle_z(cgmath::Rad(rotation));
+
         self.draw_commands.push(DrawCommand {
-            mesh: graphics::draw::Mesh::new_triangle(graphics::draw::Color::GREEN),
-            color: graphics::draw::Color::GREEN,
-            transform: Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0)),
+            mesh: graphics::draw::Mesh::new_triangle(color),
+            transform,
         });
         self
     }
 
-    pub fn draw_square(&mut self) -> &mut Self {
+    pub fn draw_rectangle(&mut self, dimension: Vector2<f32>, position: Vector2<f32>, rotation: f32, color: Color) -> &mut Self {
+
+        // base transformation
+        let mut transform = Matrix4::from_translation(Vector3::new(position.x, position.y, 0.0)) * Matrix4::from_nonuniform_scale(dimension.x, dimension.y, 1.0);
+
+        // rotation
+        if rotation != 0.0 {
+            transform = transform * Matrix4::from_angle_z(cgmath::Rad(rotation));
+        }
+
         self.draw_commands.push(DrawCommand {
-            mesh: graphics::draw::Mesh::new_square(graphics::draw::Color::GREEN),
-            color: graphics::draw::Color::GREEN,
-            transform: Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0)),
+            mesh: graphics::draw::Mesh::new_rectangle(color),
+            transform
         });
         self
     }
