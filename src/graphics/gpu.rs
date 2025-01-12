@@ -1,20 +1,19 @@
-use std::sync::Arc;
+use crate::graphics::draw::{Color, DrawCommand};
 use bytemuck::{Pod, Zeroable};
-use cgmath::{Matrix4, Vector3};
+use image::{DynamicImage, ImageReader, RgbaImage};
 use log::{info, trace};
 use pollster::FutureExt;
-use wgpu::{Adapter, AdapterInfo, BindGroup, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities};
-use wgpu::core::command::DrawKind::Draw;
+use std::sync::Arc;
 use wgpu::util::DeviceExt;
+use wgpu::{Adapter, AdapterInfo, BindGroup, BindGroupLayout, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities};
 use winit::dpi::PhysicalSize;
+use winit::window::CursorIcon::Text;
 use winit::window::Window;
-use crate::graphics::draw::{Color, DrawCommand, Mesh};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Vertex {
     pub position: [f32; 3],
-    pub color: [f32; 3],
     pub uv: [f32; 2]
 }
 
@@ -32,16 +31,100 @@ impl Vertex {
                 wgpu::VertexAttribute {
                     offset: size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: size_of::<[f32; 6]>() as wgpu::BufferAddress,
-                    shader_location: 2,
                     format: wgpu::VertexFormat::Float32x2,
                 },
             ]
         }
     }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct Uniforms {
+    pub transform: [[f32; 4]; 4],
+    pub color: [f32; 4],
+}
+
+pub struct Texture {
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub sampler: wgpu::Sampler,
+}
+
+impl Texture {
+
+    pub fn transparent_pixel(device: &Device, queue: &Queue) -> Self {
+        Texture::from_color(device, queue, Color::NONE)
+    }
+    
+    pub fn from_color(device: &Device, queue: &Queue, color: Color) -> Self {
+        let mut img = RgbaImage::new(1, 1);
+        img.put_pixel(0, 0, image::Rgba(color.into()));
+        Texture::new(device, queue, img, 1, 1)
+    }
+
+    pub fn from_image(device: &Device, queue: &Queue, dimg: DynamicImage) -> Self {
+        let img = dimg.to_rgba8();
+        let (width, height) = img.dimensions();
+        Texture::new(device, queue, img, width, height)
+    }
+
+    pub fn new(device: &Device, queue: &Queue, rgba_image: RgbaImage, width: u32, height: u32) -> Self {
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: Default::default(),
+            },
+            &rgba_image,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: None,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        Self {
+            texture,
+            view,
+            sampler,
+        }
+    }
+
 }
 
 pub struct Display {
@@ -141,22 +224,22 @@ impl Display {
     }
 
     fn create_pipeline_layout(device: &Device) -> wgpu::PipelineLayout {
-        let transform_bind_group_layout = Display::create_transform_bind_layout(&device);
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
+            label: Some("Render Pipeline Layout"),
             bind_group_layouts: &[
-                &transform_bind_group_layout,
+                &Display::create_uniform_bind_layout(&device),
+                &Display::create_texture_bind_group_layout(&device),
             ],
             push_constant_ranges: &[],
         })
     }
 
-    fn create_transform_bind_layout(device: &Device) -> wgpu::BindGroupLayout {
+    fn create_uniform_bind_layout(device: &Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -169,21 +252,15 @@ impl Display {
         })
     }
 
-    fn create_transform_bind_group(device: &Device, transform: [[f32; 4]; 4]) -> BindGroup {
-
-        // 1. Define the BindGroupLayout
-        let transform_bind_group_layout = Display::create_transform_bind_layout(&device);
-
-        // 2. Create the buffer to hold the transform data
+    fn create_uniform_bind_group(device: &Device, uniforms: Uniforms) -> BindGroup {
+        let uniform_bind_group_layout = Display::create_uniform_bind_layout(&device);
         let transform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Transform Buffer"),
-            contents: bytemuck::cast_slice(&transform),
+            label: Some("Uniforms Buffer"),
+            contents: bytemuck::cast_slice(&[uniforms]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-
-        // 3. Create the BindGroup
-        let transform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &transform_bind_group_layout,
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &uniform_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -191,9 +268,49 @@ impl Display {
                 },
             ],
             label: Some("transform_bind_group"),
-        });
+        })
+    }
 
-        transform_bind_group
+    fn create_texture_bind_group_layout(device: &Device) -> BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("texture_bind_group_layout"),
+        })
+    }
+
+    fn create_texture_bind_group(device: &Device, texture: Texture) -> BindGroup {
+        let texture_bind_group_layout = Display::create_texture_bind_group_layout(&device);
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                }
+            ],
+            label: Some("texture_bind_group"),
+        })
     }
 
     fn create_render_pipeline(device: &Device, layout: &wgpu::PipelineLayout, config: &wgpu::SurfaceConfiguration) -> wgpu::RenderPipeline {
@@ -201,7 +318,7 @@ impl Display {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
+            label: Some("Render Pipeline"),
             layout: Some(layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -226,7 +343,7 @@ impl Display {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
+                front_face: wgpu::FrontFace::Cw,
                 cull_mode: Some(wgpu::Face::Back),
                 unclipped_depth: false,
                 polygon_mode: wgpu::PolygonMode::Fill,
@@ -257,14 +374,6 @@ impl Display {
 
         self.surface.configure(&self.device, &self.config);
 
-    }
-
-    fn create_left_shift_matrix(shift_amount: f32) -> Matrix4<f32> {
-        // Create a translation vector (shift to the left by 'shift_amount')
-        let translation = Vector3::new(-shift_amount, 0.0, 0.0);
-
-        // Create the transformation matrix
-        Matrix4::from_translation(translation)
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -311,9 +420,24 @@ impl Display {
 
             for command in &self.draw_commands {
 
-                // transform bind group
-                let bind_group = Display::create_transform_bind_group(&self.device, command.transform.into());
+                // uniforms bind group
+                let uniforms = Uniforms {
+                    transform: command.transform.into(),
+                    color: command.color.clone().into(),
+                };
+                
+                let bind_group = Display::create_uniform_bind_group(&self.device, uniforms);
                 render_pass.set_bind_group(0, &bind_group, &[]);
+
+                let bg = match &command.image {
+                    Some(img) => {
+                        let texture = Texture::from_image(&self.device, &self.queue, img.image.clone()); // fixme: use cached textures
+                        Display::create_texture_bind_group(&self.device, texture)
+                    }, 
+                    None => Display::create_texture_bind_group(&self.device, Texture::transparent_pixel(&self.device, &self.queue)),
+                };
+
+                render_pass.set_bind_group(1, &bg, &[]);
 
                 let mesh = &command.mesh;
 

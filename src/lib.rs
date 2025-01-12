@@ -1,13 +1,14 @@
 pub mod graphics;
 
 use cgmath::{Matrix4, Vector2, Vector3};
-use log::{debug, error, info};
+use image::DynamicImage;
+use log::{debug, error};
 
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowAttributes, WindowId};
-use crate::graphics::draw::{Color, DrawCommand};
+use crate::graphics::draw::{Color, DrawCommand, Image};
 use crate::graphics::gpu::Display;
 
 pub trait EventHandler {
@@ -45,8 +46,10 @@ impl Raymond {
         let transform = transform * Matrix4::from_angle_z(cgmath::Rad(rotation));
 
         self.draw_commands.push(DrawCommand {
-            mesh: graphics::draw::Mesh::new_triangle(color),
+            mesh: graphics::draw::Mesh::new_triangle(),
+            image: None,
             transform,
+            color: color.into()
         });
         self
     }
@@ -62,14 +65,25 @@ impl Raymond {
         }
 
         self.draw_commands.push(DrawCommand {
-            mesh: graphics::draw::Mesh::new_rectangle(color),
-            transform
+            mesh: graphics::draw::Mesh::new_rectangle(),
+            image: None,
+            transform,
+            color: color.into()
         });
         self
     }
 
-    pub fn run(&mut self, event_handler : &mut dyn EventHandler) {
-        event_handler.on_init();
+    pub fn draw_image(&mut self, img: Image) -> &mut Self {
+        self.draw_commands.push(DrawCommand {
+            mesh: graphics::draw::Mesh::new_rectangle(),
+            image: Some(img),
+            transform: Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0)),
+            color: Color::NONE.into()
+        });
+        self
+    }
+
+    pub fn run(&mut self) {
         match EventLoop::new() {
             Ok(event_loop) => {
                 event_loop.run_app(self).expect("Unable to run app");
@@ -78,7 +92,6 @@ impl Raymond {
                 println!("Error: {}", e);
             }
         }
-        event_handler.on_close();
     }
 
 }

@@ -1,7 +1,8 @@
-use cgmath::Matrix4;
-use wgpu::Device;
-use wgpu::util::DeviceExt;
 use crate::graphics::gpu::Vertex;
+use cgmath::Matrix4;
+use image::ImageReader;
+use wgpu::util::DeviceExt;
+use wgpu::Device;
 
 #[derive(Clone, Debug)]
 pub struct Color {
@@ -22,6 +23,7 @@ impl Color {
         Self { r, g, b, a }
     }
 
+    pub const NONE: Self = Self { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
     pub const WHITE: Self = Self { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
     pub const BLACK: Self = Self { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
     pub const RED: Self = Self { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
@@ -30,10 +32,45 @@ impl Color {
 
 }
 
+impl Into<[f32; 4]> for Color {
+    fn into(self) -> [f32; 4] {
+        [self.r.clone(), self.g.clone(), self.b.clone(), self.a.clone()]
+    }
+}
+
+impl Into<[u8; 4]> for Color {
+    fn into(self) -> [u8; 4] {
+        [((self.r * 255.0) as u8), ((self.g * 255.0) as u8), ((self.b * 255.0) as u8), ((self.a * 255.0) as u8)]
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DrawCommand {
     pub mesh: Mesh,
-    pub transform: Matrix4<f32>
+    pub image: Option<Image>,
+    pub transform: Matrix4<f32>,
+    pub color: Color
+}
+
+#[derive(Clone, Debug)]
+pub struct Image {
+    pub path: String,
+    pub image: image::DynamicImage
+}
+
+impl Image {
+
+    pub fn from_file(path: &str) -> Self {
+        Self {
+            path: path.to_string(),
+            image: ImageReader::open(path).unwrap().decode().unwrap()
+        }
+    }
+    
+    pub fn write_to_file(&self, path: &str) {
+        self.image.save(path).unwrap();
+    }
+
 }
 
 #[derive(Clone, Debug)]
@@ -44,36 +81,28 @@ pub struct Mesh {
 
 impl Mesh {
 
-    pub fn new_triangle(color: Color) -> Self {
-
-        let color = [color.r, color.g, color.b];
-
+    pub fn new_triangle() -> Self {
         let vertices = vec![
-            Vertex { position: [0.0, 1.0, 0.0], color, uv: [0.0, 0.0] },
-            Vertex { position: [-1.0, -1.0, 0.0], color, uv: [0.0, 0.0] },
-            Vertex { position: [1.0, -1.0, 0.0], color, uv: [0.0, 0.0] },
+            Vertex { position: [0.0, 1.0, 0.0], uv: [0.0, 0.0] },
+            Vertex { position: [-1.0, -1.0, 0.0], uv: [0.0, 0.0] },
+            Vertex { position: [1.0, -1.0, 0.0], uv: [0.0, 0.0] },
         ];
-
         let indices = vec![0, 1, 2];
-
         Self { vertices, indices }
     }
 
-    pub fn new_rectangle(color: Color) -> Self {
-
-        let color = [color.r, color.g, color.b];
-
+    pub fn new_rectangle() -> Self {
         let vertices = vec![
-            Vertex { position: [-1.0, -1.0, 1.0], color, uv: [0.0, 0.0] },
-            Vertex { position: [1.0, -1.0, 1.0], color, uv: [0.0, 0.0] },
-            Vertex { position: [1.0, 1.0, 1.0], color, uv: [0.0, 0.0] },
-            Vertex { position: [-1.0, 1.0, 1.0], color, uv: [0.0, 0.0] },
+            Vertex { position: [-0.5, 0.5, 0.0], uv: [0.0, 0.0] }, // top left
+            Vertex { position: [0.5, 0.5, 0.0], uv: [1.0, 0.0] }, // top right
+            Vertex { position: [-0.5, -0.5, 0.0], uv: [0.0, 1.0] }, // bottom left
+            Vertex { position: [0.5, -0.5, 0.0], uv: [1.0, 1.0] }, // bottom right
         ];
-
-        let indices = vec![0, 1, 2, 2, 3, 0];
-
+        let indices = vec![
+            0, 1, 2, // first triangle
+            2, 1, 3, // second triangle
+        ];
         Self { vertices, indices }
-
     }
 
     pub fn vertex_buffer(&self, device: &Device) -> wgpu::Buffer {
