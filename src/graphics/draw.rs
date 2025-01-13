@@ -79,13 +79,19 @@ pub struct Mesh {
     pub indices: Vec<u16>
 }
 
+// vertex positions
+// -1.0, 1.0, 0.0, // top left
+// 1.0, 1.0, 0.0, // top right
+// -1.0, -1.0, 0.0, // bottom left
+// 1.0, -1.0, 0.0, // bottom right
+
 impl Mesh {
 
     pub fn new_triangle() -> Self {
         let vertices = vec![
-            Vertex { position: [0.0, 1.0, 0.0], uv: [0.0, 0.0] },
-            Vertex { position: [-1.0, -1.0, 0.0], uv: [0.0, 0.0] },
-            Vertex { position: [1.0, -1.0, 0.0], uv: [0.0, 0.0] },
+            Vertex { position: [-0.5, -0.5, 0.0], uv: [0.0, 1.0] }, // bottom left
+            Vertex { position: [0.0, 0.5, 0.0], uv: [0.5, 0.0] }, // top
+            Vertex { position: [0.5, -0.5, 0.0], uv: [1.0, 1.0] }, // bottom right
         ];
         let indices = vec![0, 1, 2];
         Self { vertices, indices }

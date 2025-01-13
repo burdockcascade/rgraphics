@@ -25,7 +25,7 @@ var s_diffuse: sampler;
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
   var out: VertexOutput;
-  out.position = vec4<f32>(in.position, 1.0);
+  out.position = uniforms.transform * vec4<f32>(in.position, 1.0);
   out.uv = in.uv;
   return out;
 }

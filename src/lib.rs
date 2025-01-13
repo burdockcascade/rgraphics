@@ -1,26 +1,33 @@
 pub mod graphics;
+pub mod frame;
 
+use std::sync::{Arc, Mutex};
 use cgmath::{Matrix4, Vector2, Vector3};
+use frame::Frame;
 use image::DynamicImage;
 use log::{debug, error};
 
+use crate::graphics::draw::{Color, DrawCommand, Image};
+use crate::graphics::gpu::Display;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowAttributes, WindowId};
-use crate::graphics::draw::{Color, DrawCommand, Image};
-use crate::graphics::gpu::Display;
 
 pub trait EventHandler {
     fn on_init(&mut self);
-    fn on_frame(&mut self, delta_time: f64);
-    fn on_close(&mut self);
+    fn on_keyboard_input(&mut self, key: KeyCode);
+    fn on_cursor_moved(&mut self, position: Vector2<f32>);
+    fn on_frame(&mut self, frame: &mut Frame);
+    fn on_close(&mut self) -> bool;
 }
 
 pub struct Raymond {
     window_attributes: WindowAttributes,
-    draw_commands: Vec<DrawCommand>,
     display: Option<Display>,
+    handler: Option<Box<dyn EventHandler>>,
+    current_frame: Frame,
 }
 
 impl Raymond {
@@ -33,53 +40,13 @@ impl Raymond {
         Self {
             window_attributes,
             display: None,
-            draw_commands: Vec::new(),
+            handler: None,
+            current_frame: Frame::new()
         }
     }
 
-    pub fn draw_triangle(&mut self, rotation: f32, color: Color) -> &mut Self {
-
-        // base transformation
-        let transform = Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0));
-
-        // rotation
-        let transform = transform * Matrix4::from_angle_z(cgmath::Rad(rotation));
-
-        self.draw_commands.push(DrawCommand {
-            mesh: graphics::draw::Mesh::new_triangle(),
-            image: None,
-            transform,
-            color: color.into()
-        });
-        self
-    }
-
-    pub fn draw_rectangle(&mut self, dimension: Vector2<f32>, position: Vector2<f32>, rotation: f32, color: Color) -> &mut Self {
-
-        // base transformation
-        let mut transform = Matrix4::from_translation(Vector3::new(position.x, position.y, 0.0)) * Matrix4::from_nonuniform_scale(dimension.x, dimension.y, 1.0);
-
-        // rotation
-        if rotation != 0.0 {
-            transform = transform * Matrix4::from_angle_z(cgmath::Rad(rotation));
-        }
-
-        self.draw_commands.push(DrawCommand {
-            mesh: graphics::draw::Mesh::new_rectangle(),
-            image: None,
-            transform,
-            color: color.into()
-        });
-        self
-    }
-
-    pub fn draw_image(&mut self, img: Image) -> &mut Self {
-        self.draw_commands.push(DrawCommand {
-            mesh: graphics::draw::Mesh::new_rectangle(),
-            image: Some(img),
-            transform: Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0)),
-            color: Color::NONE.into()
-        });
+    pub fn with_handler(mut self, handler: Box<dyn EventHandler>) -> Self {
+        self.handler = Some(handler);
         self
     }
 
@@ -105,6 +72,11 @@ impl ApplicationHandler for Raymond {
 
         let display = Display::new(window);
         self.display = Some(display);
+
+        if let Some(ref mut handler) = self.handler {
+            handler.on_init();
+        }
+        
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
@@ -123,15 +95,46 @@ impl ApplicationHandler for Raymond {
 
         match event {
             WindowEvent::CloseRequested => {
-                event_loop.exit();
+                if let Some(ref mut handler) = self.handler {
+                    if handler.on_close() {
+                        event_loop.exit();
+                    }
+                }
             }
             WindowEvent::Resized(physical_size) => {
                 graphics_state.resize(physical_size);
             }
             WindowEvent::RedrawRequested => {
-                let commands = self.draw_commands.clone();
-                graphics_state.set_draw_commands(commands);
+
+                let frame = &mut self.current_frame;
+
+                if let Some(ref mut handler) = self.handler {
+                    handler.on_frame(frame);
+                }
+                
+                graphics_state.set_draw_commands(frame.renderer().commands.clone());
                 graphics_state.render().unwrap();
+                
+                frame.next();
+            }
+            WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
+                print!("Keyboard input: {:?}", device_id);
+                
+                if let Some(ref mut handler) = self.handler {
+                    match event.physical_key {
+                        PhysicalKey::Code(code) => {
+                            handler.on_keyboard_input(code);
+                        },
+                        _ => {
+                            debug!("Unhandled physical key: {:?}", event.physical_key);
+                        }
+                    }
+                }
+            }
+            WindowEvent::CursorMoved { device_id, position } => {
+                if let Some(ref mut handler) = self.handler {
+                    handler.on_cursor_moved(Vector2::new(position.x as f32, position.y as f32));
+                }
             }
             _ => {
                 debug!("Unhandled window event: {:?}", event);
