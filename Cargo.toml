@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-log = "0.4.24"
-wgpu = "23.0.1"
-cgmath = "0.18.0"
-winit = "0.30.8"
-pollster = "0.4.0"
+log = "0.4"
+wgpu = "23.0"
+cgmath = "0.18"
+winit = "0.30"
+pollster = "0.4"
 bytemuck = { version = "1.21", features = ["derive"] }
-image = { version = "0.25.5", features = ["png", "jpeg"] }
+image = { version = "0.25", features = [ "jpeg"] }
 
 [dev-dependencies]
-simplelog = "0.12.2"
+simplelog = "0.12"

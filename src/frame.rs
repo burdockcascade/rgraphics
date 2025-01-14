@@ -1,33 +1,6 @@
 use crate::graphics::draw::{Color, DrawCommand, Image, Mesh};
 use cgmath::{Matrix4, Vector2, Vector3};
 
-pub struct Frame {
-    count: usize,
-    renderer: Renderer,
-}
-
-impl Frame {
-    pub fn new() -> Self {
-        Self {
-            count: 0,
-            renderer: Renderer::default()
-        }
-    }
-    
-    pub fn next(&mut self) {
-        self.count += 1;
-        self.renderer.commands.clear();
-    }
-    
-    pub fn count(&self) -> usize {
-        self.count
-    }
-
-    pub fn renderer(&mut self) -> &mut Renderer {
-        &mut self.renderer
-    }
-}
-
 pub struct Renderer {
     pub(crate) commands: Vec<DrawCommand>,
 }

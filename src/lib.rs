@@ -1,53 +1,57 @@
 pub mod graphics;
 pub mod frame;
 
-use std::sync::{Arc, Mutex};
-use cgmath::{Matrix4, Vector2, Vector3};
-use frame::Frame;
-use image::DynamicImage;
-use log::{debug, error};
-
+use cgmath::Vector2;
+use log::{debug, error, info};
+use crate::frame::Renderer;
 use crate::graphics::draw::{Color, DrawCommand, Image};
 use crate::graphics::gpu::Display;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowAttributes, WindowId};
 
+#[derive(Debug)]
+pub enum InputEvent {
+    KeyboardInput(DeviceId, KeyCode),
+    CursorMoved(DeviceId, Vector2<f32>)
+}
+
 pub trait EventHandler {
     fn on_init(&mut self);
-    fn on_keyboard_input(&mut self, key: KeyCode);
-    fn on_cursor_moved(&mut self, position: Vector2<f32>);
-    fn on_frame(&mut self, frame: &mut Frame);
+    fn on_input_event(&mut self, event: InputEvent);
+    fn on_update(&mut self, delta: f32);
+    fn on_draw(&mut self, renderer: &mut Renderer);
     fn on_close(&mut self) -> bool;
 }
+
+const DEFAULT_FPS: f32 = 60.0;
 
 pub struct Raymond {
     window_attributes: WindowAttributes,
     display: Option<Display>,
-    handler: Option<Box<dyn EventHandler>>,
-    current_frame: Frame,
+    handler: Box<dyn EventHandler>,
+    renderer: Renderer,
+    min_frame_duration: f32,
 }
 
 impl Raymond {
 
-    pub fn create_window(height : i32, width : i32, title : &str) -> Self {
+    pub fn create_window(height : i32, width : i32, title : &str, handler: Box<dyn EventHandler>) -> Self {
         let window_attributes = Window::default_attributes()
             .with_title(title)
             .with_inner_size(winit::dpi::PhysicalSize::new(width, height));
-
+        
+        let min_frame_duration = 1.0 / DEFAULT_FPS;
+        
         Self {
             window_attributes,
             display: None,
-            handler: None,
-            current_frame: Frame::new()
+            handler,
+            min_frame_duration,
+            renderer: Renderer::default(),
         }
-    }
-
-    pub fn with_handler(mut self, handler: Box<dyn EventHandler>) -> Self {
-        self.handler = Some(handler);
-        self
     }
 
     pub fn run(&mut self) {
@@ -72,10 +76,8 @@ impl ApplicationHandler for Raymond {
 
         let display = Display::new(window);
         self.display = Some(display);
-
-        if let Some(ref mut handler) = self.handler {
-            handler.on_init();
-        }
+        
+        self.handler.on_init();
         
     }
 
@@ -94,47 +96,49 @@ impl ApplicationHandler for Raymond {
         }
 
         match event {
+            WindowEvent::RedrawRequested => {
+                
+                // start the frame timer
+                let start = std::time::Instant::now();
+                
+                // call the update handler
+                self.handler.on_update(0.0);
+                
+                // call the draw handler
+                self.handler.on_draw(&mut self.renderer);
+                
+                // render the frame
+                graphics_state.set_draw_commands(self.renderer.commands.clone());
+                graphics_state.render().unwrap();
+                
+                // clear the draw commands
+                self.renderer.commands.clear();
+                
+                // calculate fps and print
+                let fps = (1.0 / (start.elapsed().as_secs_f32())) as u32;
+                info!("FPS: {}", fps);
+                
+            }
             WindowEvent::CloseRequested => {
-                if let Some(ref mut handler) = self.handler {
-                    if handler.on_close() {
-                        event_loop.exit();
-                    }
+                if self.handler.on_close() {
+                    event_loop.exit();
                 }
             }
             WindowEvent::Resized(physical_size) => {
                 graphics_state.resize(physical_size);
             }
-            WindowEvent::RedrawRequested => {
-
-                let frame = &mut self.current_frame;
-
-                if let Some(ref mut handler) = self.handler {
-                    handler.on_frame(frame);
-                }
-                
-                graphics_state.set_draw_commands(frame.renderer().commands.clone());
-                graphics_state.render().unwrap();
-                
-                frame.next();
-            }
             WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
-                print!("Keyboard input: {:?}", device_id);
-                
-                if let Some(ref mut handler) = self.handler {
-                    match event.physical_key {
-                        PhysicalKey::Code(code) => {
-                            handler.on_keyboard_input(code);
-                        },
-                        _ => {
-                            debug!("Unhandled physical key: {:?}", event.physical_key);
-                        }
+                match event.physical_key {
+                    PhysicalKey::Code(code) => {
+                        self.handler.on_input_event(InputEvent::KeyboardInput(device_id, code));
+                    },
+                    _ => {
+                        debug!("Unhandled physical key: {:?}", event.physical_key);
                     }
                 }
             }
             WindowEvent::CursorMoved { device_id, position } => {
-                if let Some(ref mut handler) = self.handler {
-                    handler.on_cursor_moved(Vector2::new(position.x as f32, position.y as f32));
-                }
+                self.handler.on_input_event(InputEvent::CursorMoved(device_id, Vector2::new(position.x as f32, position.y as f32)));
             }
             _ => {
                 debug!("Unhandled window event: {:?}", event);
