@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::graphics::gpu::Vertex;
 use cgmath::Matrix4;
 use image::ImageReader;
@@ -47,7 +48,7 @@ impl Into<[u8; 4]> for Color {
 #[derive(Clone, Debug)]
 pub struct DrawCommand {
     pub mesh: Mesh,
-    pub image: Option<Image>,
+    pub image: Option<Arc<Image>>,
     pub transform: Matrix4<f32>,
     pub color: Color
 }
@@ -110,20 +111,27 @@ impl Mesh {
         ];
         Self { vertices, indices }
     }
-
-    pub fn vertex_buffer(&self, device: &Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(self.vertices.as_slice()),
-            usage: wgpu::BufferUsages::VERTEX,
-        })
+    
+    pub fn new_circle(radius: f32, segments: u16) -> Self {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let center = Vertex { position: [0.0, 0.0, 0.0], uv: [0.5, 0.5] };
+        vertices.push(center);
+        for i in 0..segments {
+            let angle = 2.0 * std::f32::consts::PI / segments as f32 * i as f32;
+            let x = angle.cos() * radius;
+            let y = angle.sin() * radius;
+            vertices.push(Vertex { position: [x, y, 0.0], uv: [0.5 + x / 2.0, 0.5 + y / 2.0] });
+            if i > 0 {
+                indices.push(0);
+                indices.push(i + 1);
+                indices.push(i);
+            }
+        }
+        indices.push(0);
+        indices.push(1);
+        indices.push(segments);
+        Self { vertices, indices }
     }
-
-    pub fn index_buffer(&self, device: &Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(self.indices.as_slice()),
-            usage: wgpu::BufferUsages::INDEX,
-        })
-    }
+    
 }

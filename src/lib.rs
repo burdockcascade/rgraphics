@@ -1,6 +1,8 @@
 pub mod graphics;
 pub mod frame;
 
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 use cgmath::Vector2;
 use log::{debug, error, info};
 use crate::frame::Renderer;
@@ -26,14 +28,13 @@ pub trait EventHandler {
     fn on_close(&mut self) -> bool;
 }
 
-const DEFAULT_FPS: f32 = 60.0;
-
 pub struct Raymond {
     window_attributes: WindowAttributes,
     display: Option<Display>,
     handler: Box<dyn EventHandler>,
     renderer: Renderer,
-    min_frame_duration: f32,
+    elapsed_since_last_frame: f32,
+    target_fps: Option<u32>
 }
 
 impl Raymond {
@@ -43,14 +44,13 @@ impl Raymond {
             .with_title(title)
             .with_inner_size(winit::dpi::PhysicalSize::new(width, height));
         
-        let min_frame_duration = 1.0 / DEFAULT_FPS;
-        
         Self {
             window_attributes,
             display: None,
             handler,
-            min_frame_duration,
-            renderer: Renderer::default(),
+            elapsed_since_last_frame: 0.0,
+            renderer: Renderer::new(),
+            target_fps: None
         }
     }
 
@@ -63,6 +63,11 @@ impl Raymond {
                 println!("Error: {}", e);
             }
         }
+    }
+
+    pub fn set_target_fps(&mut self, target: u32) -> &mut Self {
+        self.target_fps = Some(target);
+        self
     }
 
 }
@@ -83,12 +88,12 @@ impl ApplicationHandler for Raymond {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
 
-        let Some(ref mut graphics_state) = self.display else {
+        let Some(ref mut display) = self.display else {
             error!("No graphics state found");
             return;
         };
 
-        let window = graphics_state.window();
+        let window = display.window();
 
         if window.id() != window_id {
             error!("Window ID mismatch");
@@ -102,21 +107,33 @@ impl ApplicationHandler for Raymond {
                 let start = std::time::Instant::now();
                 
                 // call the update handler
-                self.handler.on_update(0.0);
+                self.handler.on_update(self.elapsed_since_last_frame);
+                
+                // begin frame
+                //display.begin_frame();
                 
                 // call the draw handler
                 self.handler.on_draw(&mut self.renderer);
                 
                 // render the frame
-                graphics_state.set_draw_commands(self.renderer.commands.clone());
-                graphics_state.render().unwrap();
+                display.render(&mut self.renderer);
                 
-                // clear the draw commands
+                //display.end_frame();
+                
+                // clear the renderer
                 self.renderer.commands.clear();
                 
-                // calculate fps and print
-                let fps = (1.0 / (start.elapsed().as_secs_f32())) as u32;
-                info!("FPS: {}", fps);
+                // sleep to reach target fps
+                if let Some(target_fps) = self.target_fps {
+                    let target_frame_time = 1.0 / target_fps as f32;
+                    let elapsed = start.elapsed().as_secs_f32();
+                    let sleep_time = target_frame_time - elapsed;
+                    if sleep_time > 0.0 {
+                        std::thread::sleep(Duration::from_secs_f32(sleep_time));
+                    }
+                }
+
+                self.elapsed_since_last_frame = start.elapsed().as_secs_f32();
                 
             }
             WindowEvent::CloseRequested => {
@@ -125,7 +142,7 @@ impl ApplicationHandler for Raymond {
                 }
             }
             WindowEvent::Resized(physical_size) => {
-                graphics_state.resize(physical_size);
+                display.resize(physical_size);
             }
             WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
                 match event.physical_key {

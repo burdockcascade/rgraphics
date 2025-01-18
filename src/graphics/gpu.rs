@@ -1,14 +1,15 @@
-use crate::graphics::draw::{Color, DrawCommand};
+use std::collections::HashMap;
+use crate::graphics::draw::{Color, DrawCommand, Image};
 use bytemuck::{Pod, Zeroable};
-use image::{DynamicImage, ImageReader, RgbaImage};
-use log::{info, trace};
+use image::{DynamicImage, ImageReader, Rgb, RgbaImage};
+use log::{debug, info, trace, warn};
 use pollster::FutureExt;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
-use wgpu::{Adapter, AdapterInfo, BindGroup, BindGroupLayout, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities};
+use wgpu::{Adapter, AdapterInfo, BindGroup, BindGroupLayout, CommandEncoder, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities, SurfaceTexture};
 use winit::dpi::PhysicalSize;
-use winit::window::CursorIcon::Text;
 use winit::window::Window;
+use crate::frame::Renderer;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -49,28 +50,29 @@ pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
+    pub image: RgbaImage
 }
 
 impl Texture {
 
-    pub fn transparent_pixel(device: &Device, queue: &Queue) -> Self {
-        Texture::from_color(device, queue, Color::NONE)
+    pub fn transparent_pixel(device: &Device) -> Self {
+        Texture::from_color(device, Color::NONE)
     }
-    
-    pub fn from_color(device: &Device, queue: &Queue, color: Color) -> Self {
+
+    pub fn from_color(device: &Device, color: Color) -> Self {
         let mut img = RgbaImage::new(1, 1);
         img.put_pixel(0, 0, image::Rgba(color.into()));
-        Texture::new(device, queue, img, 1, 1)
+        Texture::new(device, img)
     }
 
-    pub fn from_image(device: &Device, queue: &Queue, dimg: DynamicImage) -> Self {
+    pub fn from_image(device: &Device, dimg: DynamicImage) -> Self {
         let img = dimg.to_rgba8();
-        let (width, height) = img.dimensions();
-        Texture::new(device, queue, img, width, height)
+
+        Texture::new(device, img)
     }
 
-    pub fn new(device: &Device, queue: &Queue, rgba_image: RgbaImage, width: u32, height: u32) -> Self {
-
+    pub fn new(device: &Device, image: RgbaImage) -> Self {
+        let (width, height) = image.dimensions();
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Texture"),
             size: wgpu::Extent3d {
@@ -85,26 +87,6 @@ impl Texture {
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: Default::default(),
-            },
-            &rgba_image,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * width),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -122,7 +104,9 @@ impl Texture {
             texture,
             view,
             sampler,
+            image
         }
+
     }
 
 }
@@ -134,9 +118,17 @@ pub struct Display {
     queue: Queue,
     config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
-    draw_commands: Vec<DrawCommand>,
     size: PhysicalSize<u32>,
     window: Arc<Window>,
+    texture_cache: HashMap<String, Texture>,
+    frame: Option<Frame>,
+    background_color: wgpu::Color
+}
+
+pub struct Frame {
+    pub view: wgpu::TextureView,
+    pub output: SurfaceTexture,
+    pub encoder: CommandEncoder,
 }
 
 impl Display {
@@ -155,6 +147,15 @@ impl Display {
 
         surface.configure(&device, &config);
 
+        let background_rgba = Color::WHITE;
+
+        let background_color = wgpu::Color {
+            r: background_rgba.r as f64,
+            g: background_rgba.g as f64,
+            b: background_rgba.b as f64,
+            a: background_rgba.a as f64,
+        };
+
         Self {
             surface,
             adapter,
@@ -163,14 +164,11 @@ impl Display {
             config,
             size,
             render_pipeline,
-            draw_commands: vec![],
             window: window_arc,
+            texture_cache: HashMap::new(),
+            frame: None,
+            background_color
         }
-    }
-
-    pub fn set_draw_commands(&mut self, command: Vec<DrawCommand>) {
-        self.draw_commands.clear();
-        self.draw_commands = command;
     }
 
     pub fn get_adaptor_info(&self) -> AdapterInfo {
@@ -295,7 +293,7 @@ impl Display {
         })
     }
 
-    fn create_texture_bind_group(device: &Device, texture: Texture) -> BindGroup {
+    fn create_texture_bind_group(device: &Device, texture: &Texture) -> BindGroup {
         let texture_bind_group_layout = Display::create_texture_bind_group_layout(&device);
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
@@ -360,7 +358,7 @@ impl Display {
     }
 
     fn create_gpu_instance() -> Instance {
-        Instance::new(wgpu::InstanceDescriptor {
+        Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             ..Default::default()
         })
@@ -376,30 +374,116 @@ impl Display {
 
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-
+    fn write_texture_to_queue(queue: &Queue, texture: &Texture) {
+        let (width, height) = texture.image.dimensions();
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &texture.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: Default::default(),
+            },
+            &texture.image,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    
+    pub fn load_texture(mut self, image: Image) {
+        if !self.texture_cache.contains_key(&image.path) {
+            let texture = Texture::from_image(&self.device, image.image);
+            Display::write_texture_to_queue(&self.queue, &texture);
+            self.texture_cache.insert(image.path, texture);
+        }
+    }
+    
+    fn create_vertex_buffer(&self, vertices: &[Vertex]) -> wgpu::Buffer {
+        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        })
+    }
+    
+    fn create_index_buffer(&self, indices: &[u16]) -> wgpu::Buffer {
+        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        })
+    }
+    
+    // pub fn begin_frame(&mut self) {
+    // 
+    //     let Ok(output) = self.surface.get_current_texture() else {
+    //         warn!("Unable to get current texture");
+    //         return;
+    //     };
+    //     
+    //     let view = output
+    //         .texture
+    //         .create_view(&wgpu::TextureViewDescriptor::default());
+    // 
+    //     let encoder = self
+    //         .device
+    //         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+    //             label: Some("Render Encoder"),
+    //         });
+    //     
+    //     self.frame = Some(Frame {
+    //         output,
+    //         view,
+    //         encoder
+    //     });
+    //     
+    // }
+    // 
+    // pub fn draw_mesh(&mut self, draw_command: DrawCommand) {
+    //     
+    // }
+    // 
+    // pub fn end_frame(&mut self) {
+    //     match self.frame.take() {
+    //         Some(frame) => {
+    //             self.queue.submit(std::iter::once(frame.encoder.finish()));
+    //             frame.output.present();
+    //         },
+    //         None => {
+    //             warn!("No frame to end");
+    //         }
+    //     }
+    // }
+    
+    pub fn render(&mut self, renderer: &mut Renderer) {
+    
         trace!("Start frame");
-
-        let output = self.surface.get_current_texture()?;
+    
+        let output = match self.surface.get_current_texture() {
+            Ok(o) => o,
+            Err(e) => {
+                warn!("Unable to get current texture: {:?}", e);
+                return;
+            }
+        };
+        
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-
+    
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-
-        let background_rgba = Color::WHITE;
-
-        let background_color = wgpu::Color {
-            r: background_rgba.r as f64,
-            g: background_rgba.g as f64,
-            b: background_rgba.b as f64,
-            a: background_rgba.a as f64,
-        };
-
+    
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -407,7 +491,7 @@ impl Display {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(background_color),
+                        load: wgpu::LoadOp::Clear(self.background_color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -415,11 +499,11 @@ impl Display {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-
+    
             render_pass.set_pipeline(&self.render_pipeline);
-
-            for command in &self.draw_commands {
-
+    
+            for command in renderer.commands.iter() {
+    
                 // uniforms bind group
                 let uniforms = Uniforms {
                     transform: command.transform.into(),
@@ -428,34 +512,45 @@ impl Display {
                 
                 let bind_group = Display::create_uniform_bind_group(&self.device, uniforms);
                 render_pass.set_bind_group(0, &bind_group, &[]);
-
-                let bg = match &command.image {
+    
+                let texture = match &command.image {
                     Some(img) => {
-                        let texture = Texture::from_image(&self.device, &self.queue, img.image.clone()); // fixme: use cached textures
-                        Display::create_texture_bind_group(&self.device, texture)
+                        match self.texture_cache.get(&img.path) {
+                            Some(t) => t,
+                            None => {
+                                // load texture
+                                let texture = Texture::from_image(&self.device, img.image.clone());
+                                Display::write_texture_to_queue(&self.queue, &texture);
+                                self.texture_cache.insert(img.path.clone(), texture);
+                                self.texture_cache.get(&img.path).unwrap()
+                            }
+                        }
                     }, 
-                    None => Display::create_texture_bind_group(&self.device, Texture::transparent_pixel(&self.device, &self.queue)),
+                    None => {
+                        &Texture::transparent_pixel(&self.device)
+                    }
                 };
-
+                
+                let bg = Display::create_texture_bind_group(&self.device, &texture);
+    
                 render_pass.set_bind_group(1, &bg, &[]);
-
+    
                 let mesh = &command.mesh;
-
-                let vertex_buffer = mesh.vertex_buffer(&self.device);
-                let index_buffer = mesh.index_buffer(&self.device);
+    
+                let vertex_buffer = self.create_vertex_buffer(&mesh.vertices);
+                let index_buffer = self.create_index_buffer(&mesh.indices);
                 render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                 render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
             }
-
+    
         }
-
+    
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-
+    
         trace!("End frame");
-
-        Ok(())
+        
     }
 
     pub fn window(&self) -> &Window {
