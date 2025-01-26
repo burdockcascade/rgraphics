@@ -121,14 +121,7 @@ pub struct Display {
     size: PhysicalSize<u32>,
     window: Arc<Window>,
     texture_cache: HashMap<String, Texture>,
-    frame: Option<Frame>,
-    background_color: wgpu::Color
-}
-
-pub struct Frame {
-    pub view: wgpu::TextureView,
-    pub output: SurfaceTexture,
-    pub encoder: CommandEncoder,
+    background_color: wgpu::Color,
 }
 
 impl Display {
@@ -166,7 +159,6 @@ impl Display {
             render_pipeline,
             window: window_arc,
             texture_cache: HashMap::new(),
-            frame: None,
             background_color
         }
     }
@@ -201,7 +193,7 @@ impl Display {
                 &wgpu::DeviceDescriptor {
                     required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default(),
-                    label: None,
+                    label: Some("Device"),
                     memory_hints: Default::default(),
                 },
                 None,
@@ -377,14 +369,14 @@ impl Display {
     fn write_texture_to_queue(queue: &Queue, texture: &Texture) {
         let (width, height) = texture.image.dimensions();
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &texture.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: Default::default(),
             },
             &texture.image,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * width),
                 rows_per_image: Some(height),

@@ -34,7 +34,8 @@ pub struct Raymond {
     handler: Box<dyn EventHandler>,
     renderer: Renderer,
     elapsed_since_last_frame: f32,
-    target_fps: Option<u32>
+    start: std::time::Instant,
+    target_frame_time: Option<f32>
 }
 
 impl Raymond {
@@ -50,7 +51,8 @@ impl Raymond {
             handler,
             elapsed_since_last_frame: 0.0,
             renderer: Renderer::new(),
-            target_fps: None
+            start: std::time::Instant::now(),
+            target_frame_time: None
         }
     }
 
@@ -66,7 +68,7 @@ impl Raymond {
     }
 
     pub fn set_target_fps(&mut self, target: u32) -> &mut Self {
-        self.target_fps = Some(target);
+        self.target_frame_time = Some(1.0 / target as f32);
         self
     }
 
@@ -104,13 +106,10 @@ impl ApplicationHandler for Raymond {
             WindowEvent::RedrawRequested => {
                 
                 // start the frame timer
-                let start = std::time::Instant::now();
+                self.start = std::time::Instant::now();
                 
                 // call the update handler
                 self.handler.on_update(self.elapsed_since_last_frame);
-                
-                // begin frame
-                //display.begin_frame();
                 
                 // call the draw handler
                 self.handler.on_draw(&mut self.renderer);
@@ -118,22 +117,18 @@ impl ApplicationHandler for Raymond {
                 // render the frame
                 display.render(&mut self.renderer);
                 
-                //display.end_frame();
-                
                 // clear the renderer
-                self.renderer.commands.clear();
+                self.renderer.clear_commands();
                 
                 // sleep to reach target fps
-                if let Some(target_fps) = self.target_fps {
-                    let target_frame_time = 1.0 / target_fps as f32;
-                    let elapsed = start.elapsed().as_secs_f32();
-                    let sleep_time = target_frame_time - elapsed;
+                if let Some(target_frame_time) = self.target_frame_time {
+                    let sleep_time = target_frame_time - self.start.elapsed().as_secs_f32();
                     if sleep_time > 0.0 {
                         std::thread::sleep(Duration::from_secs_f32(sleep_time));
                     }
                 }
 
-                self.elapsed_since_last_frame = start.elapsed().as_secs_f32();
+                self.elapsed_since_last_frame = self.start.elapsed().as_secs_f32();
                 
             }
             WindowEvent::CloseRequested => {

@@ -10,14 +10,16 @@ use std::sync::Arc;
 
 pub struct MyWindow {
     images: HashMap<String, Arc<Image>>,
-    position: Vector2<f32>
+    position: Vector2<f32>,
+    frame_count: u32
 }
 
 impl Default for MyWindow {
     fn default() -> Self {
         Self {
             images: HashMap::with_capacity(4),
-            position: Vector2::new(0.0, 0.0)
+            position: Vector2::new(0.0, 0.0),
+            frame_count: 0
         }
     }
 }
@@ -35,11 +37,15 @@ impl EventHandler for MyWindow {
 
     fn on_update(&mut self, delta: f32) {
         
-        // calculate fps and print
-        let fps = (1.0 / delta) as u32;
-        //info!("FPS: {}", fps);
+        self.frame_count += 1;
         
-        // every second move the position of the image
+        // calculate fps and print
+        if self.frame_count % 1 == 0 {
+            let fps = (1.0 / delta) as u32;
+            info!("FPS: {}", fps);
+        }
+        
+        // every frame move the position of the image
         self.position.x += 0.1 * delta;
         if self.position.x > 1.0 {
             self.position.x = -1.0;
@@ -55,7 +61,7 @@ impl EventHandler for MyWindow {
 
         // renderer.draw_triangle(Vector2::new(0.3, -0.4), Color::RED);
         // renderer.draw_triangle(Vector2::new(-0.2, 0.4), Color::BLUE);
-        renderer.draw_rectangle(Vector2::new(0.2, 0.2), Vector2::new(0.5, 0.5), 0.0, Color::GREEN);
+        //renderer.draw_rectangle(Vector2::new(0.2, 0.2), Vector2::new(0.5, 0.5), 0.0, Color::GREEN);
         //renderer.draw_circle(Vector2::new(-0.5, -0.5), 0.25, 32, Color::RED);
         //renderer.draw_line(Vector2::new(-0.5, -0.5), Vector2::new(0.5, 0.5), 0.5, Color::GREEN);
 

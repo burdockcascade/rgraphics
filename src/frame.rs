@@ -17,6 +17,10 @@ impl Renderer {
         }
     }
     
+    pub fn clear_commands(&mut self) {
+        self.commands.clear();
+    }
+    
     pub fn set_background_color(&mut self, color: Color) -> &mut Self {
         self.background_color = color;
         self
