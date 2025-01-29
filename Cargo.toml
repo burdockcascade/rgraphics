@@ -10,7 +10,7 @@ cgmath = "0.18"
 winit = "0.30"
 pollster = "0.4"
 bytemuck = { version = "1.21", features = ["derive"] }
-image = { version = "0.25", features = [ "jpeg"] }
+image = { version = "0.25", default-features = false, features = [ "jpeg"] }
 
 [dev-dependencies]
 simplelog = "0.12"
