@@ -48,6 +48,7 @@ impl Renderer {
         if rotation != 0.0 {
             transform = transform * Matrix4::from_angle_z(cgmath::Rad(rotation));
         }
+
         self.commands.push(DrawCommand {
             mesh: Mesh::new_rectangle(),
             image: Arc::new(Image::single_pixel(color)),
@@ -62,20 +63,6 @@ impl Renderer {
             mesh: Mesh::new_circle(radius, segments),
             image: Arc::new(Image::single_pixel(color)),
             transform: Matrix4::from_translation(Vector3::new(position.x, position.y, 0.0)),
-            color: Color::WHITE
-        });
-        self
-    }
-    
-    pub fn draw_line(&mut self, start: Vector2<f32>, end: Vector2<f32>, thickness: f32, color: Color) -> &mut Self {
-        let direction = end - start;
-        let length = direction.magnitude();
-        let angle = direction.y.atan2(direction.x);
-        let transform = Matrix4::from_translation(Vector3::new(start.x, start.y, 0.0)) * Matrix4::from_nonuniform_scale(length, thickness, 1.0) * Matrix4::from_angle_z(cgmath::Rad(angle));
-        self.commands.push(DrawCommand {
-            mesh: Mesh::new_rectangle(),
-            image: Arc::new(Image::single_pixel(color)),
-            transform,
             color: Color::WHITE
         });
         self

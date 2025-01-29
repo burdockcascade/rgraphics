@@ -29,8 +29,8 @@ impl Default for MyWindow {
 impl EventHandler for MyWindow {
     fn on_init(&mut self) {
         info!("Window initialized");
-        self.images.insert("tintin".to_string(), Arc::new(Image::from_file("C:/Workspace/rgraphics/examples/tintin.jpg")));
-        self.images.insert("tintindog".to_string(), Arc::new(Image::from_file("C:/Workspace/rgraphics/examples/tintindog.jpg")));
+        self.images.insert("tintin".to_string(), Arc::new(Image::from_file("C:/Workspace/rgraphics/examples/assets/tintin.jpg")));
+        self.images.insert("tintindog".to_string(), Arc::new(Image::from_file("C:/Workspace/rgraphics/examples/assets/tintindog.jpg")));
     }
 
     fn on_input_event(&mut self, event: InputEvent) {
