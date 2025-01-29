@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use crate::graphics::draw::{Color, DrawCommand, Image, Mesh};
 use cgmath::{InnerSpace, Matrix4, Vector2, Vector3};
-use crate::graphics::gpu::Display;
 
 pub struct Renderer {
     pub commands: Vec<DrawCommand>,
@@ -17,7 +16,7 @@ impl Renderer {
         }
     }
     
-    pub fn clear_commands(&mut self) {
+    pub fn end_frame(&mut self) {
         self.commands.clear();
     }
     
@@ -30,12 +29,12 @@ impl Renderer {
 
         // base transformation
         let transform = Matrix4::from_translation(Vector3::new(position.x, position.y, 0.0));
-
+        
         self.commands.push(DrawCommand {
             mesh: Mesh::new_triangle(),
-            image: None,
+            image: Arc::new(Image::single_pixel(color)),
             transform,
-            color: color.into()
+            color: Color::WHITE
         });
         self
     }
@@ -49,12 +48,11 @@ impl Renderer {
         if rotation != 0.0 {
             transform = transform * Matrix4::from_angle_z(cgmath::Rad(rotation));
         }
-
         self.commands.push(DrawCommand {
             mesh: Mesh::new_rectangle(),
-            image: None,
+            image: Arc::new(Image::single_pixel(color)),
             transform,
-            color: color.into()
+            color: Color::WHITE
         });
         self
     }
@@ -62,9 +60,9 @@ impl Renderer {
     pub fn draw_circle(&mut self, position: Vector2<f32>, radius: f32, segments: u16, color: Color) -> &mut Self {
         self.commands.push(DrawCommand {
             mesh: Mesh::new_circle(radius, segments),
-            image: None,
+            image: Arc::new(Image::single_pixel(color)),
             transform: Matrix4::from_translation(Vector3::new(position.x, position.y, 0.0)),
-            color: color.into()
+            color: Color::WHITE
         });
         self
     }
@@ -76,9 +74,9 @@ impl Renderer {
         let transform = Matrix4::from_translation(Vector3::new(start.x, start.y, 0.0)) * Matrix4::from_nonuniform_scale(length, thickness, 1.0) * Matrix4::from_angle_z(cgmath::Rad(angle));
         self.commands.push(DrawCommand {
             mesh: Mesh::new_rectangle(),
-            image: None,
+            image: Arc::new(Image::single_pixel(color)),
             transform,
-            color: color.into()
+            color: Color::WHITE
         });
         self
     }
@@ -86,16 +84,11 @@ impl Renderer {
     pub fn draw_image(&mut self, position: Vector2<f32>, img: Arc<Image>) -> &mut Self {
         self.commands.push(DrawCommand {
             mesh: Mesh::new_rectangle(),
-            image: Some(img),
+            image: img,
             transform: Matrix4::from_translation(Vector3::new(position.x, position.y, 0.0)),
-            color: Color::NONE.into()
+            color: Color::WHITE
         });
         self
     }
     
-    // get commands and then clear
-    pub fn take_commands(&mut self) -> Vec<DrawCommand> {
-        std::mem::take(&mut self.commands)
-    }
-
 }

@@ -6,7 +6,7 @@ use log::{debug, info, trace, warn};
 use pollster::FutureExt;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
-use wgpu::{Adapter, AdapterInfo, BindGroup, BindGroupLayout, CommandEncoder, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities, SurfaceTexture};
+use wgpu::{Adapter, AdapterInfo, BindGroup, BindGroupLayout, Buffer, CommandEncoder, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities, SurfaceTexture};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 use crate::frame::Renderer;
@@ -54,16 +54,6 @@ pub struct Texture {
 }
 
 impl Texture {
-
-    pub fn transparent_pixel(device: &Device) -> Self {
-        Texture::from_color(device, Color::NONE)
-    }
-
-    pub fn from_color(device: &Device, color: Color) -> Self {
-        let mut img = RgbaImage::new(1, 1);
-        img.put_pixel(0, 0, image::Rgba(color.into()));
-        Texture::new(device, img)
-    }
 
     pub fn from_image(device: &Device, dimg: DynamicImage) -> Self {
         let img = dimg.to_rgba8();
@@ -121,7 +111,7 @@ pub struct Display {
     size: PhysicalSize<u32>,
     window: Arc<Window>,
     texture_cache: HashMap<String, Texture>,
-    background_color: wgpu::Color,
+    background_color: wgpu::Color
 }
 
 impl Display {
@@ -397,15 +387,15 @@ impl Display {
         }
     }
     
-    fn create_vertex_buffer(&self, vertices: &[Vertex]) -> wgpu::Buffer {
+    fn create_vertex_buffer(&mut self, vertices: &[Vertex]) -> Buffer {
         self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(vertices),
             usage: wgpu::BufferUsages::VERTEX,
         })
     }
-    
-    fn create_index_buffer(&self, indices: &[u16]) -> wgpu::Buffer {
+
+    fn create_index_buffer(&mut self, indices: &[u16]) -> Buffer {
         self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
             contents: bytemuck::cast_slice(indices),
@@ -413,51 +403,8 @@ impl Display {
         })
     }
     
-    // pub fn begin_frame(&mut self) {
-    // 
-    //     let Ok(output) = self.surface.get_current_texture() else {
-    //         warn!("Unable to get current texture");
-    //         return;
-    //     };
-    //     
-    //     let view = output
-    //         .texture
-    //         .create_view(&wgpu::TextureViewDescriptor::default());
-    // 
-    //     let encoder = self
-    //         .device
-    //         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-    //             label: Some("Render Encoder"),
-    //         });
-    //     
-    //     self.frame = Some(Frame {
-    //         output,
-    //         view,
-    //         encoder
-    //     });
-    //     
-    // }
-    // 
-    // pub fn draw_mesh(&mut self, draw_command: DrawCommand) {
-    //     
-    // }
-    // 
-    // pub fn end_frame(&mut self) {
-    //     match self.frame.take() {
-    //         Some(frame) => {
-    //             self.queue.submit(std::iter::once(frame.encoder.finish()));
-    //             frame.output.present();
-    //         },
-    //         None => {
-    //             warn!("No frame to end");
-    //         }
-    //     }
-    // }
-    
     pub fn render(&mut self, renderer: &mut Renderer) {
-    
-        trace!("Start frame");
-    
+        
         let output = match self.surface.get_current_texture() {
             Ok(o) => o,
             Err(e) => {
@@ -505,24 +452,18 @@ impl Display {
                 let bind_group = Display::create_uniform_bind_group(&self.device, uniforms);
                 render_pass.set_bind_group(0, &bind_group, &[]);
     
-                let texture = match &command.image {
-                    Some(img) => {
-                        match self.texture_cache.get(&img.path) {
-                            Some(t) => t,
-                            None => {
-                                // load texture
-                                let texture = Texture::from_image(&self.device, img.image.clone());
-                                Display::write_texture_to_queue(&self.queue, &texture);
-                                self.texture_cache.insert(img.path.clone(), texture);
-                                self.texture_cache.get(&img.path).unwrap()
-                            }
-                        }
-                    }, 
+                let img = &command.image;
+                let texture = match self.texture_cache.get(&img.path) {
+                    Some(t) => t,
                     None => {
-                        &Texture::transparent_pixel(&self.device)
+                        // load texture
+                        let texture = Texture::from_image(&self.device, img.image.clone());
+                        Display::write_texture_to_queue(&self.queue, &texture);
+                        self.texture_cache.insert(img.path.clone(), texture);
+                        self.texture_cache.get(&img.path).unwrap()
                     }
                 };
-                
+               
                 let bg = Display::create_texture_bind_group(&self.device, &texture);
     
                 render_pass.set_bind_group(1, &bg, &[]);
@@ -531,6 +472,7 @@ impl Display {
     
                 let vertex_buffer = self.create_vertex_buffer(&mesh.vertices);
                 let index_buffer = self.create_index_buffer(&mesh.indices);
+                
                 render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                 render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
@@ -540,8 +482,6 @@ impl Display {
     
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-    
-        trace!("End frame");
         
     }
 

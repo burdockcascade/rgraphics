@@ -2,8 +2,7 @@ use std::sync::Arc;
 use crate::graphics::gpu::Vertex;
 use cgmath::Matrix4;
 use image::ImageReader;
-use wgpu::util::DeviceExt;
-use wgpu::Device;
+use image::RgbaImage;
 
 #[derive(Clone, Debug)]
 pub struct Color {
@@ -24,7 +23,6 @@ impl Color {
         Self { r, g, b, a }
     }
 
-    pub const NONE: Self = Self { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
     pub const WHITE: Self = Self { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
     pub const BLACK: Self = Self { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
     pub const RED: Self = Self { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
@@ -48,9 +46,9 @@ impl Into<[u8; 4]> for Color {
 #[derive(Clone, Debug)]
 pub struct DrawCommand {
     pub mesh: Mesh,
-    pub image: Option<Arc<Image>>,
+    pub image: Arc<Image>,
     pub transform: Matrix4<f32>,
-    pub color: Color
+    pub color: Color,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +63,15 @@ impl Image {
         Self {
             path: path.to_string(),
             image: ImageReader::open(path).unwrap().decode().unwrap()
+        }
+    }
+
+    pub fn single_pixel(color: Color) -> Self {
+        let mut img = RgbaImage::new(1, 1);
+        img.put_pixel(0, 0, image::Rgba(color.clone().into()));
+        Self {
+            path: format!("single_pixel_{:?}_{:?}_{:?}_{:?}", color.r, color.g, color.b, color.a),
+            image: image::DynamicImage::ImageRgba8(img)
         }
     }
     

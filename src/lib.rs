@@ -1,16 +1,15 @@
 pub mod graphics;
 pub mod frame;
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
 use std::time::Duration;
 use cgmath::Vector2;
-use log::{debug, error, info};
+use log::{debug, error};
 use crate::frame::Renderer;
-use crate::graphics::draw::{Color, DrawCommand, Image};
 use crate::graphics::gpu::Display;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceId, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowAttributes, WindowId};
 
@@ -21,11 +20,11 @@ pub enum InputEvent {
 }
 
 pub trait EventHandler {
-    fn on_init(&mut self);
-    fn on_input_event(&mut self, event: InputEvent);
-    fn on_update(&mut self, delta: f32);
-    fn on_draw(&mut self, renderer: &mut Renderer);
-    fn on_close(&mut self) -> bool;
+    fn on_init(&mut self) {}
+    fn on_input_event(&mut self, event: InputEvent) {}
+    fn on_update(&mut self, delta: f32) {}
+    fn on_draw(&mut self, renderer: &mut Renderer) {}
+    fn on_close(&mut self) -> bool { true }
 }
 
 pub struct Raymond {
@@ -33,6 +32,7 @@ pub struct Raymond {
     display: Option<Display>,
     handler: Box<dyn EventHandler>,
     renderer: Renderer,
+    exit_requested: bool,
     elapsed_since_last_frame: f32,
     start: std::time::Instant,
     target_frame_time: Option<f32>
@@ -52,7 +52,8 @@ impl Raymond {
             elapsed_since_last_frame: 0.0,
             renderer: Renderer::new(),
             start: std::time::Instant::now(),
-            target_frame_time: None
+            target_frame_time: None,
+            exit_requested: false
         }
     }
 
@@ -118,13 +119,13 @@ impl ApplicationHandler for Raymond {
                 display.render(&mut self.renderer);
                 
                 // clear the renderer
-                self.renderer.clear_commands();
+                self.renderer.end_frame();
                 
                 // sleep to reach target fps
                 if let Some(target_frame_time) = self.target_frame_time {
                     let sleep_time = target_frame_time - self.start.elapsed().as_secs_f32();
                     if sleep_time > 0.0 {
-                        std::thread::sleep(Duration::from_secs_f32(sleep_time));
+                        thread::sleep(Duration::from_secs_f32(sleep_time));
                     }
                 }
 
@@ -139,9 +140,17 @@ impl ApplicationHandler for Raymond {
             WindowEvent::Resized(physical_size) => {
                 display.resize(physical_size);
             }
-            WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
+            WindowEvent::KeyboardInput { device_id, event, .. } => {
                 match event.physical_key {
                     PhysicalKey::Code(code) => {
+
+                        // exit on escape
+                        if code == KeyCode::Escape {
+                            if self.handler.on_close() {
+                                self.exit_requested = true;
+                            }
+                        }
+
                         self.handler.on_input_event(InputEvent::KeyboardInput(device_id, code));
                     },
                     _ => {
@@ -159,9 +168,17 @@ impl ApplicationHandler for Raymond {
 
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        
         let window = self.display.as_ref().unwrap().window();
         window.request_redraw();
+        
+        if self.exit_requested {
+            event_loop.exit();
+        }
+
+        event_loop.set_control_flow(ControlFlow::Poll);
+
     }
 }
 
