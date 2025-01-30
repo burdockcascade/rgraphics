@@ -7,6 +7,7 @@ use rgraphics::{EventHandler, InputEvent};
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::HashMap;
 use std::sync::Arc;
+use winit::window::Window;
 
 pub struct MyWindow {
     images: HashMap<String, Arc<Image>>,
@@ -57,7 +58,9 @@ impl EventHandler for MyWindow {
         
     }
 
-    fn on_draw(&mut self, renderer: &mut Renderer) {
+    fn on_draw(&mut self, window: Arc<Window>, renderer: &mut Renderer) {
+        
+        window.set_title(&format!("FPS: {}", self.frame_count));
 
         //renderer.draw_image(Vector2::new(0.4, 0.4), self.images.get("tintindog").unwrap().clone());
         //renderer.draw_image(Vector2::new(-0.2, -0.2), self.images.get("tintin").unwrap().clone());

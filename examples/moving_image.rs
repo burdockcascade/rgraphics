@@ -4,6 +4,7 @@ use rgraphics::graphics::draw::Image;
 use rgraphics::Raymond;
 use rgraphics::EventHandler;
 use std::sync::Arc;
+use winit::window::Window;
 
 pub struct MyWindow {
     tintin: Arc<Image>,
@@ -27,7 +28,7 @@ impl EventHandler for MyWindow {
         }
     }
 
-    fn on_draw(&mut self, renderer: &mut Renderer) {
+    fn on_draw(&mut self, window: Arc<Window>, renderer: &mut Renderer) {
         renderer.draw_image(self.position, self.tintin.clone());
     }
 

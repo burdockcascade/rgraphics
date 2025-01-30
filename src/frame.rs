@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::graphics::draw::{Color, DrawCommand, Image, Mesh};
-use cgmath::{InnerSpace, Matrix4, Vector2, Vector3};
+use cgmath::{Matrix4, Vector2, Vector3};
 
 pub struct Renderer {
     pub commands: Vec<DrawCommand>,

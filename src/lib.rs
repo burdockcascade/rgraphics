@@ -1,6 +1,7 @@
 pub mod graphics;
 pub mod frame;
 
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use cgmath::Vector2;
@@ -9,7 +10,7 @@ use crate::frame::Renderer;
 use crate::graphics::gpu::Display;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceId, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowAttributes, WindowId};
 
@@ -23,16 +24,16 @@ pub trait EventHandler {
     fn on_init(&mut self) {}
     fn on_input_event(&mut self, event: InputEvent) {}
     fn on_update(&mut self, delta: f32) {}
-    fn on_draw(&mut self, renderer: &mut Renderer) {}
+    fn on_draw(&mut self, window: Arc<Window>, renderer: &mut Renderer) {}
     fn on_close(&mut self) -> bool { true }
 }
 
 pub struct Raymond {
+    window: Option<Arc<Window>>,
     window_attributes: WindowAttributes,
     display: Option<Display>,
     handler: Box<dyn EventHandler>,
     renderer: Renderer,
-    exit_requested: bool,
     elapsed_since_last_frame: f32,
     start: std::time::Instant,
     target_frame_time: Option<f32>
@@ -48,23 +49,19 @@ impl Raymond {
         Self {
             window_attributes,
             display: None,
+            window: None,
             handler,
             elapsed_since_last_frame: 0.0,
             renderer: Renderer::new(),
             start: std::time::Instant::now(),
-            target_frame_time: None,
-            exit_requested: false
+            target_frame_time: None
         }
     }
 
     pub fn run(&mut self) {
         match EventLoop::new() {
-            Ok(event_loop) => {
-                event_loop.run_app(self).expect("Unable to run app");
-            }
-            Err(e) => {
-                println!("Error: {}", e);
-            }
+            Ok(event_loop) => event_loop.run_app(self).expect("Unable to run app"),
+            Err(e) => error!("Error creating event loop: {}", e)
         }
     }
 
@@ -78,30 +75,28 @@ impl Raymond {
 impl ApplicationHandler for Raymond {
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = event_loop
-            .create_window(self.window_attributes.clone())
-            .unwrap();
-
-        let display = Display::new(window);
-        self.display = Some(display);
         
+        let window = match event_loop.create_window(self.window_attributes.clone()) {
+            Ok(window) => Arc::new(window),
+            Err(e) => {
+                error!("Error creating window: {}", e);
+                return;
+            }
+        };
+        
+        
+        let display = Display::new(window.clone());
+        self.display = Some(display);
+        self.window = Some(window.clone());
         self.handler.on_init();
         
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
 
         let Some(ref mut display) = self.display else {
-            error!("No graphics state found");
-            return;
+            panic!("No display found");
         };
-
-        let window = display.window();
-
-        if window.id() != window_id {
-            error!("Window ID mismatch");
-            return
-        }
 
         match event {
             WindowEvent::RedrawRequested => {
@@ -113,7 +108,7 @@ impl ApplicationHandler for Raymond {
                 self.handler.on_update(self.elapsed_since_last_frame);
                 
                 // call the draw handler
-                self.handler.on_draw(&mut self.renderer);
+                self.handler.on_draw(self.window.clone().unwrap(), &mut self.renderer);
                 
                 // render the frame
                 display.render(&mut self.renderer);
@@ -147,7 +142,7 @@ impl ApplicationHandler for Raymond {
                         // exit on escape
                         if code == KeyCode::Escape {
                             if self.handler.on_close() {
-                                self.exit_requested = true;
+                                event_loop.exit();
                             }
                         }
 
@@ -168,17 +163,15 @@ impl ApplicationHandler for Raymond {
 
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        
-        let window = self.display.as_ref().unwrap().window();
-        window.request_redraw();
-        
-        if self.exit_requested {
-            event_loop.exit();
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        match self.window {
+            Some(ref window) => {
+                window.request_redraw();
+            }
+            None => {
+                error!("No window found");
+            }
         }
-
-        event_loop.set_control_flow(ControlFlow::Poll);
-
     }
 }
 

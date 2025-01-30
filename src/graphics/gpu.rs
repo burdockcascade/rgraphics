@@ -109,18 +109,16 @@ pub struct Display {
     config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
     size: PhysicalSize<u32>,
-    window: Arc<Window>,
     texture_cache: HashMap<String, Texture>,
     background_color: wgpu::Color
 }
 
 impl Display {
-    pub fn new(window: Window) -> Self {
-
-        let window_arc = Arc::new(window);
-        let size = window_arc.inner_size();
+    pub fn new(window: Arc<Window>) -> Self {
+        
+        let size = window.inner_size();
         let instance = Self::create_gpu_instance();
-        let surface = instance.create_surface(window_arc.clone()).unwrap();
+        let surface = instance.create_surface(window).unwrap();
         let adapter = Self::create_adapter(instance, &surface);
         let (device, queue) = Self::create_device(&adapter);
         let surface_caps = surface.get_capabilities(&adapter);
@@ -147,7 +145,6 @@ impl Display {
             config,
             size,
             render_pipeline,
-            window: window_arc,
             texture_cache: HashMap::new(),
             background_color
         }
@@ -485,7 +482,4 @@ impl Display {
         
     }
 
-    pub fn window(&self) -> &Window {
-        &self.window
-    }
 }
