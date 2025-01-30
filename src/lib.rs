@@ -24,7 +24,7 @@ pub trait EventHandler {
     fn on_init(&mut self) {}
     fn on_input_event(&mut self, event: InputEvent) {}
     fn on_update(&mut self, delta: f32) {}
-    fn on_draw(&mut self, window: Arc<Window>, renderer: &mut Renderer) {}
+    fn on_draw(&mut self, renderer: &mut Renderer) {}
     fn on_close(&mut self) -> bool { true }
 }
 
@@ -41,6 +41,19 @@ pub struct Raymond {
 
 impl Raymond {
 
+    pub fn new(handler: Box<dyn EventHandler>) -> Self {
+        Self {
+            window_attributes: Window::default_attributes(),
+            display: None,
+            window: None,
+            handler,
+            elapsed_since_last_frame: 0.0,
+            renderer: Renderer::new(),
+            start: std::time::Instant::now(),
+            target_frame_time: None
+        }
+    }
+    
     pub fn create_window(height : i32, width : i32, title : &str, handler: Box<dyn EventHandler>) -> Self {
         let window_attributes = Window::default_attributes()
             .with_title(title)
@@ -56,6 +69,11 @@ impl Raymond {
             start: std::time::Instant::now(),
             target_frame_time: None
         }
+    }
+    
+    pub fn set_window_attributes(&mut self, attributes: WindowAttributes) -> &mut Self {
+        self.window_attributes = attributes;
+        self
     }
 
     pub fn run(&mut self) {
@@ -108,7 +126,7 @@ impl ApplicationHandler for Raymond {
                 self.handler.on_update(self.elapsed_since_last_frame);
                 
                 // call the draw handler
-                self.handler.on_draw(self.window.clone().unwrap(), &mut self.renderer);
+                self.handler.on_draw(&mut self.renderer);
                 
                 // render the frame
                 display.render(&mut self.renderer);

@@ -58,9 +58,7 @@ impl EventHandler for MyWindow {
         
     }
 
-    fn on_draw(&mut self, window: Arc<Window>, renderer: &mut Renderer) {
-        
-        window.set_title(&format!("FPS: {}", self.frame_count));
+    fn on_draw(&mut self, renderer: &mut Renderer) {
 
         //renderer.draw_image(Vector2::new(0.4, 0.4), self.images.get("tintindog").unwrap().clone());
         //renderer.draw_image(Vector2::new(-0.2, -0.2), self.images.get("tintin").unwrap().clone());
@@ -87,8 +85,12 @@ fn main() {
     
     let my_game = MyWindow::default();
 
-    Raymond::create_window(600, 800, "Window Example", Box::new(my_game))
+    Raymond::new(Box::new(my_game))
         .set_target_fps(60)
+        .set_window_attributes(Window::default_attributes()
+            .with_title("Hello Window")
+            .with_resizable(false)
+            .with_transparent(true))
         .run();
 
 }

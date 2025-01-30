@@ -28,7 +28,7 @@ impl EventHandler for MyWindow {
         }
     }
 
-    fn on_draw(&mut self, window: Arc<Window>, renderer: &mut Renderer) {
+    fn on_draw(&mut self, renderer: &mut Renderer) {
         renderer.draw_image(self.position, self.tintin.clone());
     }
 

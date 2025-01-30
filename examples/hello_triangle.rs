@@ -10,7 +10,7 @@ pub struct MyWindow {
 }
 
 impl EventHandler for MyWindow {
-    fn on_draw(&mut self, window: Arc<Window>, renderer: &mut Renderer) {
+    fn on_draw(&mut self, renderer: &mut Renderer) {
         renderer.draw_triangle(Vector2::new(0.25, 0.25), Color::BLUE);
         renderer.draw_triangle(Vector2::new(0.0, 0.0), Color::GREEN);
         renderer.draw_triangle(Vector2::new(-0.25, -0.25), Color::RED);
