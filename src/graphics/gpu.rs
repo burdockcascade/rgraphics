@@ -1,12 +1,12 @@
 use std::collections::HashMap;
-use crate::graphics::draw::{Color, DrawCommand, Image};
+use crate::graphics::draw::{Color, Image};
 use bytemuck::{Pod, Zeroable};
-use image::{DynamicImage, ImageReader, Rgb, RgbaImage};
-use log::{debug, info, trace, warn};
+use image::{DynamicImage,  RgbaImage};
+use log::warn;
 use pollster::FutureExt;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
-use wgpu::{Adapter, AdapterInfo, BindGroup, BindGroupLayout, Buffer, CommandEncoder, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities, SurfaceTexture};
+use wgpu::{Adapter, AdapterInfo, BindGroup, BindGroupLayout, Buffer, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 use crate::frame::Renderer;
