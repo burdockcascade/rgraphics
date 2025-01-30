@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::HashMap;
 use crate::graphics::draw::{Color, Image};
 use bytemuck::{Pod, Zeroable};
@@ -345,12 +346,9 @@ impl Display {
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         self.size = new_size;
-
-        self.config.width = new_size.width;
-        self.config.height = new_size.height;
-
+        self.config.width = max(new_size.width, 1);
+        self.config.height = max(new_size.height, 1);
         self.surface.configure(&self.device, &self.config);
-
     }
 
     fn write_texture_to_queue(queue: &Queue, texture: &Texture) {
