@@ -1,18 +1,17 @@
 pub mod graphics;
-pub mod frame;
 
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use cgmath::Vector2;
 use log::{debug, error};
-use crate::frame::Renderer;
 use crate::graphics::gpu::Display;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowAttributes, WindowId};
+use crate::graphics::draw::Renderer;
 
 #[derive(Debug)]
 pub enum InputEvent {
@@ -53,7 +52,7 @@ impl Raymond {
             target_frame_time: None
         }
     }
-    
+
     pub fn create_window(height : i32, width : i32, title : &str, handler: Box<dyn EventHandler>) -> Self {
         let window_attributes = Window::default_attributes()
             .with_title(title)
@@ -70,7 +69,7 @@ impl Raymond {
             target_frame_time: None
         }
     }
-    
+
     pub fn set_window_attributes(&mut self, attributes: WindowAttributes) -> &mut Self {
         self.window_attributes = attributes;
         self
@@ -93,7 +92,7 @@ impl Raymond {
 impl ApplicationHandler for Raymond {
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        
+
         let window = match event_loop.create_window(self.window_attributes.clone()) {
             Ok(window) => Arc::new(window),
             Err(e) => {
@@ -101,13 +100,13 @@ impl ApplicationHandler for Raymond {
                 return;
             }
         };
-        
-        
+
+
         let display = Display::new(window.clone());
         self.display = Some(display);
         self.window = Some(window.clone());
         self.handler.on_init();
-        
+
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {

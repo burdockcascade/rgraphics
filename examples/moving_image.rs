@@ -1,10 +1,8 @@
 use cgmath::Vector2;
-use rgraphics::frame::Renderer;
-use rgraphics::graphics::draw::Image;
+use rgraphics::graphics::draw::{Image, Renderer};
 use rgraphics::Raymond;
 use rgraphics::EventHandler;
 use std::sync::Arc;
-use winit::window::Window;
 
 pub struct MyWindow {
     tintin: Arc<Image>,

@@ -1,7 +1,6 @@
 use cgmath::Vector2;
 use log::{info, LevelFilter};
-use rgraphics::frame::Renderer;
-use rgraphics::graphics::draw::{Color, Image};
+use rgraphics::graphics::draw::{Color, Image, Renderer, Transform};
 use rgraphics::Raymond;
 use rgraphics::{EventHandler, InputEvent};
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
@@ -64,9 +63,9 @@ impl EventHandler for MyWindow {
         //renderer.draw_image(Vector2::new(-0.2, -0.2), self.images.get("tintin").unwrap().clone());
         renderer.draw_image(self.position, self.images.get("tintin").unwrap().clone());
 
-        renderer.draw_triangle(Vector2::new(0.3, -0.4), Color::RED);
-        renderer.draw_triangle(Vector2::new(-0.2, 0.4), Color::BLUE);
-        renderer.draw_rectangle(Vector2::new(0.2, 0.2), Vector2::new(0.5, 0.5), 0.0, Color::GREEN);
+        renderer.draw_triangle(Transform::at(0.3, -0.4), Color::RED);
+        renderer.draw_triangle(Transform::at(-0.2, 0.4), Color::BLUE);
+        // renderer.draw_rectangle(Transform::at(0.2, 0.2), Vector2::new(0.5, 0.5), Color::GREEN);
         //renderer.draw_circle(Vector2::new(-0.5, -0.5), 0.25, 32, Color::RED);
         //renderer.draw_line(Vector2::new(-0.5, -0.5), Vector2::new(0.5, 0.5), 0.5, Color::GREEN);
 

@@ -1,8 +1,25 @@
 use std::sync::Arc;
-use crate::graphics::gpu::Vertex;
-use cgmath::Matrix4;
+use crate::graphics::gpu::Mesh;
+use cgmath::{InnerSpace, Matrix4, Vector2, Vector3};
 use image::ImageReader;
 use image::RgbaImage;
+
+#[derive(Clone, Debug)]
+pub struct Transform {
+    pub position: Vector2<f32>,
+    pub scale: Vector2<f32>,
+    pub rotation: f32
+}
+
+impl Transform {
+    pub fn at(x: f32, y: f32) -> Self {
+        Self {
+            position: Vector2::new(x, y),
+            scale: Vector2::new(1.0, 1.0),
+            rotation: 0.0
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Color {
@@ -23,6 +40,7 @@ impl Color {
         Self { r, g, b, a }
     }
 
+    pub const NONE: Self = Self { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
     pub const WHITE: Self = Self { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
     pub const BLACK: Self = Self { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
     pub const RED: Self = Self { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
@@ -81,64 +99,89 @@ impl Image {
 
 }
 
-#[derive(Clone, Debug)]
-pub struct Mesh {
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u16>
+pub struct Renderer {
+    pub commands: Vec<DrawCommand>,
+    pub background_color: Color
 }
 
-// vertex positions
-// -1.0, 1.0, 0.0, // top left
-// 1.0, 1.0, 0.0, // top right
-// -1.0, -1.0, 0.0, // bottom left
-// 1.0, -1.0, 0.0, // bottom right
+impl Renderer {
 
-impl Mesh {
-
-    pub fn new_triangle() -> Self {
-        let vertices = vec![
-            Vertex { position: [-0.5, -0.5, 0.0], uv: [0.0, 1.0] }, // bottom left
-            Vertex { position: [0.0, 0.5, 0.0], uv: [0.5, 0.0] }, // top
-            Vertex { position: [0.5, -0.5, 0.0], uv: [1.0, 1.0] }, // bottom right
-        ];
-        let indices = vec![0, 1, 2];
-        Self { vertices, indices }
-    }
-
-    pub fn new_rectangle() -> Self {
-        let vertices = vec![
-            Vertex { position: [-0.5, 0.5, 0.0], uv: [0.0, 0.0] }, // top left
-            Vertex { position: [0.5, 0.5, 0.0], uv: [1.0, 0.0] }, // top right
-            Vertex { position: [-0.5, -0.5, 0.0], uv: [0.0, 1.0] }, // bottom left
-            Vertex { position: [0.5, -0.5, 0.0], uv: [1.0, 1.0] }, // bottom right
-        ];
-        let indices = vec![
-            0, 1, 2, // first triangle
-            2, 1, 3, // second triangle
-        ];
-        Self { vertices, indices }
-    }
-    
-    pub fn new_circle(radius: f32, segments: u16) -> Self {
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-        let center = Vertex { position: [0.0, 0.0, 0.0], uv: [0.5, 0.5] };
-        vertices.push(center);
-        for i in 0..segments {
-            let angle = 2.0 * std::f32::consts::PI / segments as f32 * i as f32;
-            let x = angle.cos() * radius;
-            let y = angle.sin() * radius;
-            vertices.push(Vertex { position: [x, y, 0.0], uv: [0.5 + x / 2.0, 0.5 + y / 2.0] });
-            if i > 0 {
-                indices.push(0);
-                indices.push(i + 1);
-                indices.push(i);
-            }
+    pub fn new() -> Self {
+        Self {
+            commands: Vec::with_capacity(8),
+            background_color: Color::BLACK
         }
-        indices.push(0);
-        indices.push(1);
-        indices.push(segments);
-        Self { vertices, indices }
+    }
+
+    pub fn end_frame(&mut self) {
+        self.commands.clear();
+    }
+
+    pub fn set_background_color(&mut self, color: Color) -> &mut Self {
+        self.background_color = color;
+        self
+    }
+
+    pub fn draw_triangle(&mut self, transform: Transform, color: Color) -> &mut Self {
+
+        // base transformation
+        let transform = Matrix4::from_translation(Vector3::new(transform.position.x, transform.position.y, 0.0));
+
+        self.commands.push(DrawCommand {
+            mesh: Mesh::new_triangle(),
+            image: Arc::new(Image::single_pixel(color)),
+            transform,
+            color: Color::NONE
+        });
+        self
+    }
+
+    pub fn draw_rectangle(&mut self, transform: Transform, dimension: Vector2<f32>, color: Color) -> &mut Self {
+
+        // base transformation
+        let mut transform = Matrix4::from_translation(Vector3::new(transform.position.x,transform. position.y, 0.0)) * Matrix4::from_nonuniform_scale(dimension.x, dimension.y, 1.0);
+        
+        self.commands.push(DrawCommand {
+            mesh: Mesh::new_rectangle(),
+            image: Arc::new(Image::single_pixel(color)),
+            transform,
+            color: Color::NONE
+        });
+        self
+    }
+
+    pub fn draw_circle(&mut self, transform: Transform, radius: f32, segments: u16, color: Color) -> &mut Self {
+        self.commands.push(DrawCommand {
+            mesh: Mesh::new_circle(radius, segments),
+            image: Arc::new(Image::single_pixel(color)),
+            transform: Matrix4::from_translation(Vector3::new(transform.position.x, transform.position.y, 0.0)),
+            color: Color::WHITE
+        });
+        self
+    }
+
+    pub fn draw_image(&mut self, position: Vector2<f32>, img: Arc<Image>) -> &mut Self {
+        self.commands.push(DrawCommand {
+            mesh: Mesh::new_rectangle(),
+            image: img,
+            transform: Matrix4::from_translation(Vector3::new(position.x, position.y, 0.0)),
+            color: Color::WHITE
+        });
+        self
     }
     
+    pub fn draw_line(&mut self, start: Vector2<f32>, end: Vector2<f32>, thickness: f32, color: Color) -> &mut Self {
+        let direction = end - start;
+        let length = direction.magnitude();
+        let angle = direction.y.atan2(direction.x);
+        let transform = Matrix4::from_translation(Vector3::new(start.x, start.y, 0.0)) * Matrix4::from_angle_z(cgmath::Rad(angle)) * Matrix4::from_translation(Vector3::new(0.0, 0.5 * length, 0.0)) * Matrix4::from_nonuniform_scale(thickness, length, 1.0);
+        self.commands.push(DrawCommand {
+            mesh: Mesh::new_rectangle(),
+            image: Arc::new(Image::single_pixel(color)),
+            transform,
+            color: Color::NONE
+        });
+        self
+    }
+
 }

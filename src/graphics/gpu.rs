@@ -1,22 +1,22 @@
 use std::cmp::max;
 use std::collections::HashMap;
-use crate::graphics::draw::{Color, Image};
+use crate::graphics::draw::{Color, Image, Renderer};
 use bytemuck::{Pod, Zeroable};
 use image::{DynamicImage,  RgbaImage};
-use log::warn;
+use log::{info, warn};
 use pollster::FutureExt;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use wgpu::{Adapter, AdapterInfo, BindGroup, BindGroupLayout, Buffer, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
-use crate::frame::Renderer;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Vertex {
     pub position: [f32; 3],
-    pub uv: [f32; 2]
+    pub uv: [f32; 2],
+    pub color: [f32; 4],
 }
 
 impl Vertex {
@@ -34,6 +34,11 @@ impl Vertex {
                     offset: size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 5]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x3,
                 },
             ]
         }
@@ -98,6 +103,93 @@ impl Texture {
             image
         }
 
+    }
+
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Point {
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct Mesh {
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u16>
+}
+
+// vertex positions for wgpu
+// -1.0, 1.0, 0.0, // top left
+// 1.0, 1.0, 0.0, // top right
+// -1.0, -1.0, 0.0, // bottom left
+// 1.0, -1.0, 0.0, // bottom right
+
+impl Mesh {
+    
+    pub fn new_triangle() -> Self {
+        let vertices = vec![
+            Vertex { position: [-0.5, -0.5, 0.0], uv: [0.0, 1.0], color: Color::NONE.into() }, // bottom left
+            Vertex { position: [0.0, 0.5, 0.0], uv: [0.5, 0.0], color: Color::NONE.into() }, // top
+            Vertex { position: [0.5, -0.5, 0.0], uv: [1.0, 1.0], color: Color::NONE.into() }, // bottom right
+        ];
+        let indices = vec![0, 1, 2];
+        Self { vertices, indices }
+    }
+    
+    pub fn new_rectangle() -> Self {
+        let vertices = vec![
+            Vertex { position: [-0.5, 0.5, 0.0], uv: [0.0, 0.0], color: Color::NONE.into() }, // top left
+            Vertex { position: [0.5, 0.5, 0.0], uv: [1.0, 0.0], color: Color::NONE.into() }, // top right
+            Vertex { position: [-0.5, -0.5, 0.0], uv: [0.0, 1.0], color: Color::NONE.into() }, // bottom left
+            Vertex { position: [0.5, -0.5, 0.0], uv: [1.0, 1.0], color: Color::NONE.into() }, // bottom right
+        ];
+        let indices = vec![
+            0, 1, 2, // first triangle
+            2, 1, 3, // second triangle
+        ];
+        Self { vertices, indices }
+    }
+
+    pub fn new_circle(radius: f32, segments: u16) -> Self {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let center = Vertex { position: [0.0, 0.0, 0.0], uv: [0.5, 0.5], color: Color::NONE.into() };
+        vertices.push(center);
+        for i in 0..segments {
+            let angle = 2.0 * std::f32::consts::PI / segments as f32 * i as f32;
+            let x = angle.cos() * radius;
+            let y = angle.sin() * radius;
+            vertices.push(Vertex { position: [x, y, 0.0], uv: [0.5 + x / 2.0, 0.5 + y / 2.0], color: Color::NONE.into() });
+            if i > 0 {
+                indices.push(0);
+                indices.push(i + 1);
+                indices.push(i);
+            }
+        }
+        indices.push(0);
+        indices.push(1);
+        indices.push(segments);
+        Self { vertices, indices }
+    }
+    
+    pub fn new_line(start: Point, end: Point, thickness: f32) -> Self {
+        let dx = end.x - start.x;
+        let dy = end.y - start.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        let nx = dy / len;
+        let ny = -dx / len;
+        let vertices = vec![
+            Vertex { position: [start.x - nx * thickness, start.y - ny * thickness, 0.0], uv: [0.0, 0.0], color: Color::NONE.into() }, // start left
+            Vertex { position: [start.x + nx * thickness, start.y + ny * thickness, 0.0], uv: [1.0, 0.0], color: Color::NONE.into() }, // start right
+            Vertex { position: [end.x - nx * thickness, end.y - ny * thickness, 0.0], uv: [0.0, 1.0], color: Color::NONE.into() }, // end left
+            Vertex { position: [end.x + nx * thickness, end.y + ny * thickness, 0.0], uv: [1.0, 1.0], color: Color::NONE.into() }, // end right
+        ];
+        let indices = vec![
+            0, 1, 2, // first triangle
+            2, 1, 3, // second triangle
+        ];
+        Self { vertices, indices }
     }
 
 }
