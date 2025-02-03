@@ -1,16 +1,16 @@
-use cgmath::Vector2;
 use log::{info, LevelFilter};
-use rgraphics::graphics::draw::{Color, Image, Renderer, Transform};
+use rgraphics::graphics::draw::{Color, Image, Renderer, Transform2D};
 use rgraphics::Raymond;
 use rgraphics::{EventHandler, InputEvent};
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::HashMap;
 use std::sync::Arc;
+use glam::Vec2;
 use winit::window::Window;
 
 pub struct MyWindow {
     images: HashMap<String, Arc<Image>>,
-    position: Vector2<f32>,
+    position: Vec2,
     frame_count: u32,
     fps_timer: f32
 }
@@ -19,7 +19,7 @@ impl Default for MyWindow {
     fn default() -> Self {
         Self {
             images: HashMap::with_capacity(4),
-            position: Vector2::new(0.0, 0.0),
+            position: Vec2::new(0.0, 0.0),
             frame_count: 0,
             fps_timer: 0.0
         }
@@ -63,8 +63,8 @@ impl EventHandler for MyWindow {
         //renderer.draw_image(Vector2::new(-0.2, -0.2), self.images.get("tintin").unwrap().clone());
         renderer.draw_image(self.position, self.images.get("tintin").unwrap().clone());
 
-        renderer.draw_triangle(Transform::at(0.3, -0.4), Color::RED);
-        renderer.draw_triangle(Transform::at(-0.2, 0.4), Color::BLUE);
+        renderer.draw_triangle(Transform2D::at(0.3, -0.4), Color::RED);
+        renderer.draw_triangle(Transform2D::at(-0.2, 0.4), Color::BLUE);
         // renderer.draw_rectangle(Transform::at(0.2, 0.2), Vector2::new(0.5, 0.5), Color::GREEN);
         //renderer.draw_circle(Vector2::new(-0.5, -0.5), 0.25, 32, Color::RED);
         //renderer.draw_line(Vector2::new(-0.5, -0.5), Vector2::new(0.5, 0.5), 0.5, Color::GREEN);

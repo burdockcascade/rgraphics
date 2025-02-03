@@ -1,55 +1,23 @@
 use std::cmp::max;
 use std::collections::HashMap;
-use crate::graphics::draw::{Color, Image, Renderer};
+use crate::graphics::draw::{Color, DrawCommand, Image, Renderer};
 use bytemuck::{Pod, Zeroable};
 use image::{DynamicImage,  RgbaImage};
-use log::{info, warn};
+use log::{debug, info, warn};
 use pollster::FutureExt;
 use std::sync::Arc;
+use glam::{vec4, Mat4, Vec2, Vec3};
 use wgpu::util::DeviceExt;
 use wgpu::{Adapter, AdapterInfo, BindGroup, BindGroupLayout, Buffer, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
+use crate::graphics::mesh::Vertex;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
-pub struct Vertex {
-    pub position: [f32; 3],
-    pub uv: [f32; 2],
-    pub color: [f32; 4],
-}
-
-impl Vertex {
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    offset: size_of::<[f32; 5]>() as wgpu::BufferAddress,
-                    shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-            ]
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-pub struct Uniforms {
-    pub transform: [[f32; 4]; 4],
-    pub color: [f32; 4],
+pub struct DrawUniform2D {
+    pub transform_matrix: [[f32; 4]; 4],
+    pub color: [f32; 4]
 }
 
 pub struct Texture {
@@ -103,93 +71,6 @@ impl Texture {
             image
         }
 
-    }
-
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Point {
-    pub x: f32,
-    pub y: f32,
-}
-
-#[derive(Clone, Debug)]
-pub struct Mesh {
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u16>
-}
-
-// vertex positions for wgpu
-// -1.0, 1.0, 0.0, // top left
-// 1.0, 1.0, 0.0, // top right
-// -1.0, -1.0, 0.0, // bottom left
-// 1.0, -1.0, 0.0, // bottom right
-
-impl Mesh {
-    
-    pub fn new_triangle() -> Self {
-        let vertices = vec![
-            Vertex { position: [-0.5, -0.5, 0.0], uv: [0.0, 1.0], color: Color::NONE.into() }, // bottom left
-            Vertex { position: [0.0, 0.5, 0.0], uv: [0.5, 0.0], color: Color::NONE.into() }, // top
-            Vertex { position: [0.5, -0.5, 0.0], uv: [1.0, 1.0], color: Color::NONE.into() }, // bottom right
-        ];
-        let indices = vec![0, 1, 2];
-        Self { vertices, indices }
-    }
-    
-    pub fn new_rectangle() -> Self {
-        let vertices = vec![
-            Vertex { position: [-0.5, 0.5, 0.0], uv: [0.0, 0.0], color: Color::NONE.into() }, // top left
-            Vertex { position: [0.5, 0.5, 0.0], uv: [1.0, 0.0], color: Color::NONE.into() }, // top right
-            Vertex { position: [-0.5, -0.5, 0.0], uv: [0.0, 1.0], color: Color::NONE.into() }, // bottom left
-            Vertex { position: [0.5, -0.5, 0.0], uv: [1.0, 1.0], color: Color::NONE.into() }, // bottom right
-        ];
-        let indices = vec![
-            0, 1, 2, // first triangle
-            2, 1, 3, // second triangle
-        ];
-        Self { vertices, indices }
-    }
-
-    pub fn new_circle(radius: f32, segments: u16) -> Self {
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-        let center = Vertex { position: [0.0, 0.0, 0.0], uv: [0.5, 0.5], color: Color::NONE.into() };
-        vertices.push(center);
-        for i in 0..segments {
-            let angle = 2.0 * std::f32::consts::PI / segments as f32 * i as f32;
-            let x = angle.cos() * radius;
-            let y = angle.sin() * radius;
-            vertices.push(Vertex { position: [x, y, 0.0], uv: [0.5 + x / 2.0, 0.5 + y / 2.0], color: Color::NONE.into() });
-            if i > 0 {
-                indices.push(0);
-                indices.push(i + 1);
-                indices.push(i);
-            }
-        }
-        indices.push(0);
-        indices.push(1);
-        indices.push(segments);
-        Self { vertices, indices }
-    }
-    
-    pub fn new_line(start: Point, end: Point, thickness: f32) -> Self {
-        let dx = end.x - start.x;
-        let dy = end.y - start.y;
-        let len = (dx * dx + dy * dy).sqrt();
-        let nx = dy / len;
-        let ny = -dx / len;
-        let vertices = vec![
-            Vertex { position: [start.x - nx * thickness, start.y - ny * thickness, 0.0], uv: [0.0, 0.0], color: Color::NONE.into() }, // start left
-            Vertex { position: [start.x + nx * thickness, start.y + ny * thickness, 0.0], uv: [1.0, 0.0], color: Color::NONE.into() }, // start right
-            Vertex { position: [end.x - nx * thickness, end.y - ny * thickness, 0.0], uv: [0.0, 1.0], color: Color::NONE.into() }, // end left
-            Vertex { position: [end.x + nx * thickness, end.y + ny * thickness, 0.0], uv: [1.0, 1.0], color: Color::NONE.into() }, // end right
-        ];
-        let indices = vec![
-            0, 1, 2, // first triangle
-            2, 1, 3, // second triangle
-        ];
-        Self { vertices, indices }
     }
 
 }
@@ -304,7 +185,7 @@ impl Display {
         })
     }
 
-    fn create_uniform_bind_layout(device: &Device) -> wgpu::BindGroupLayout {
+    fn create_uniform_bind_layout(device: &Device) -> BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
@@ -318,11 +199,11 @@ impl Display {
                     count: None,
                 },
             ],
-            label: Some("transform_bind_group_layout"),
+            label: Some("uniform_bind_group_layout"),
         })
     }
 
-    fn create_uniform_bind_group(device: &Device, uniforms: Uniforms) -> BindGroup {
+    fn create_uniform_bind_group(device: &Device, uniforms: DrawUniform2D) -> BindGroup {
         let uniform_bind_group_layout = Display::create_uniform_bind_layout(&device);
         let transform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Uniforms Buffer"),
@@ -385,7 +266,7 @@ impl Display {
 
     fn create_render_pipeline(device: &Device, layout: &wgpu::PipelineLayout, config: &wgpu::SurfaceConfiguration) -> wgpu::RenderPipeline {
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+        let shader = device.create_shader_module(wgpu::include_wgsl!("shader2d.wgsl"));
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -525,51 +406,70 @@ impl Display {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-    
+
             render_pass.set_pipeline(&self.render_pipeline);
     
             for command in renderer.commands.iter() {
-    
-                // uniforms bind group
-                let uniforms = Uniforms {
-                    transform: command.transform.into(),
-                    color: command.color.clone().into(),
-                };
-                
-                let bind_group = Display::create_uniform_bind_group(&self.device, uniforms);
-                render_pass.set_bind_group(0, &bind_group, &[]);
-    
-                let img = &command.image;
-                let texture = match self.texture_cache.get(&img.path) {
-                    Some(t) => t,
-                    None => {
-                        // load texture
-                        let texture = Texture::from_image(&self.device, img.image.clone());
-                        Display::write_texture_to_queue(&self.queue, &texture);
-                        self.texture_cache.insert(img.path.clone(), texture);
-                        self.texture_cache.get(&img.path).unwrap()
+                match command {
+                    DrawCommand::Mesh2D {mesh, transform, color, image, ..} => {
+
+                        let transform_matrix = {
+                            let translation_matrix = Mat4::from_translation(transform.position.extend(0.0));
+                            let rotation_matrix = Mat4::from_rotation_z(transform.rotation);
+                            let scale_matrix = Mat4::from_scale(transform.scale.extend(1.0));
+                            translation_matrix * rotation_matrix * scale_matrix
+                        };
+
+                        let draw_uniforms = DrawUniform2D {
+                            transform_matrix: transform_matrix.to_cols_array_2d(),
+                            color: [color.r, color.g, color.b, color.a]
+                        };
+
+                        let bind_group = Display::create_uniform_bind_group(&self.device, draw_uniforms);
+                        render_pass.set_bind_group(0, &bind_group, &[]);
+
+                        let texture = match image {
+                            None => {
+                                let pixel  = Image::single_pixel(Color::WHITE);
+                                self.texture_cache.entry(pixel.path.clone()).or_insert(Texture::from_image(&self.device, pixel.image.clone()))
+                            },
+                            Some(image) => {
+                                match self.texture_cache.get(&image.path) {
+                                    Some(t) => t,
+                                    None => {
+                                        // load texture
+                                        let texture = Texture::from_image(&self.device, image.image.clone());
+                                        Display::write_texture_to_queue(&self.queue, &texture);
+                                        self.texture_cache.insert(image.path.clone(), texture);
+                                        self.texture_cache.get(&image.path).unwrap()
+                                    }
+                                }
+                            }
+                        };
+
+                        let bg = Display::create_texture_bind_group(&self.device, &texture);
+                        render_pass.set_bind_group(1, &bg, &[]);
+                        
+                        let vertex_buffer = self.create_vertex_buffer(&mesh.vertices);
+                        let index_buffer = self.create_index_buffer(&mesh.indices);
+
+                        render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                        render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                        render_pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1)
                     }
-                };
-               
-                let bg = Display::create_texture_bind_group(&self.device, &texture);
-    
-                render_pass.set_bind_group(1, &bg, &[]);
-    
-                let mesh = &command.mesh;
-    
-                let vertex_buffer = self.create_vertex_buffer(&mesh.vertices);
-                let index_buffer = self.create_index_buffer(&mesh.indices);
+                }
                 
-                render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                render_pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
             }
     
         }
     
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-        
+    }
+
+
+    fn create_orthographic_matrix(width: f32, height: f32) -> Mat4 {
+        Mat4::orthographic_rh(0.0, width, height, 0.0, -1.0, 1.0)
     }
 
 }

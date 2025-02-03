@@ -1,5 +1,4 @@
-use cgmath::Vector2;
-use rgraphics::graphics::draw::{Color, Renderer, Transform};
+use rgraphics::graphics::draw::{Color, Renderer, Transform2D};
 use rgraphics::Raymond;
 use rgraphics::EventHandler;
 
@@ -7,9 +6,9 @@ pub struct MyWindow;
 
 impl EventHandler for MyWindow {
     fn on_draw(&mut self, renderer: &mut Renderer) {
-        renderer.draw_triangle(Transform::at(0.25, 0.25), Color::BLUE);
-        renderer.draw_triangle(Transform::at(0.0, 0.0), Color::GREEN);
-        renderer.draw_triangle(Transform::at(-0.25, -0.25), Color::RED);
+        renderer.draw_triangle(Transform2D::at(0.25, 0.25), Color::BLUE);
+        renderer.draw_triangle(Transform2D::at(0.0, 0.0), Color::GREEN);
+        renderer.draw_triangle(Transform2D::at(-0.25, -0.25), Color::RED);
     }
 }
 

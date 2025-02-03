@@ -1,21 +1,21 @@
 use std::sync::Arc;
-use crate::graphics::gpu::Mesh;
-use cgmath::{InnerSpace, Matrix4, Vector2, Vector3};
+use glam::Vec2;
 use image::ImageReader;
 use image::RgbaImage;
+use crate::graphics::mesh::Mesh;
 
 #[derive(Clone, Debug)]
-pub struct Transform {
-    pub position: Vector2<f32>,
-    pub scale: Vector2<f32>,
+pub struct Transform2D {
+    pub position: Vec2,
+    pub scale: Vec2,
     pub rotation: f32
 }
 
-impl Transform {
+impl Transform2D {
     pub fn at(x: f32, y: f32) -> Self {
         Self {
-            position: Vector2::new(x, y),
-            scale: Vector2::new(1.0, 1.0),
+            position: Vec2::new(x, y),
+            scale: Vec2::new(1.0, 1.0),
             rotation: 0.0
         }
     }
@@ -62,11 +62,13 @@ impl Into<[u8; 4]> for Color {
 }
 
 #[derive(Clone, Debug)]
-pub struct DrawCommand {
-    pub mesh: Mesh,
-    pub image: Arc<Image>,
-    pub transform: Matrix4<f32>,
-    pub color: Color,
+pub enum DrawCommand {
+    Mesh2D {
+        mesh: Mesh,
+        transform: Transform2D,
+        image: Option<Arc<Image>>,
+        color: Color
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -122,62 +124,40 @@ impl Renderer {
         self
     }
 
-    pub fn draw_triangle(&mut self, transform: Transform, color: Color) -> &mut Self {
-
-        // base transformation
-        let transform = Matrix4::from_translation(Vector3::new(transform.position.x, transform.position.y, 0.0));
-
-        self.commands.push(DrawCommand {
+    pub fn draw_triangle(&mut self, transform: Transform2D, color: Color) -> &mut Self {
+        self.commands.push(DrawCommand::Mesh2D {
             mesh: Mesh::new_triangle(),
-            image: Arc::new(Image::single_pixel(color)),
+            image: None,
             transform,
-            color: Color::NONE
+            color
         });
         self
     }
 
-    pub fn draw_rectangle(&mut self, transform: Transform, dimension: Vector2<f32>, color: Color) -> &mut Self {
-
-        // base transformation
-        let mut transform = Matrix4::from_translation(Vector3::new(transform.position.x,transform. position.y, 0.0)) * Matrix4::from_nonuniform_scale(dimension.x, dimension.y, 1.0);
-        
-        self.commands.push(DrawCommand {
+    pub fn draw_rectangle(&mut self, transform: Transform2D, dimension: Vec2, color: Color) -> &mut Self {
+        self.commands.push(DrawCommand::Mesh2D {
             mesh: Mesh::new_rectangle(),
-            image: Arc::new(Image::single_pixel(color)),
+            image: None,
             transform,
-            color: Color::NONE
+            color
         });
         self
     }
 
-    pub fn draw_circle(&mut self, transform: Transform, radius: f32, segments: u16, color: Color) -> &mut Self {
-        self.commands.push(DrawCommand {
+    pub fn draw_circle(&mut self, transform: Transform2D, radius: f32, segments: u16, color: Color) -> &mut Self {
+        self.commands.push(DrawCommand::Mesh2D {
             mesh: Mesh::new_circle(radius, segments),
-            image: Arc::new(Image::single_pixel(color)),
-            transform: Matrix4::from_translation(Vector3::new(transform.position.x, transform.position.y, 0.0)),
-            color: Color::WHITE
+            image: None,
+            transform,
+            color
         });
         self
     }
 
-    pub fn draw_image(&mut self, position: Vector2<f32>, img: Arc<Image>) -> &mut Self {
-        self.commands.push(DrawCommand {
+    pub fn draw_image(&mut self, transform: Transform2D, img: Arc<Image>) -> &mut Self {
+        self.commands.push(DrawCommand::Mesh2D {
             mesh: Mesh::new_rectangle(),
-            image: img,
-            transform: Matrix4::from_translation(Vector3::new(position.x, position.y, 0.0)),
-            color: Color::WHITE
-        });
-        self
-    }
-    
-    pub fn draw_line(&mut self, start: Vector2<f32>, end: Vector2<f32>, thickness: f32, color: Color) -> &mut Self {
-        let direction = end - start;
-        let length = direction.magnitude();
-        let angle = direction.y.atan2(direction.x);
-        let transform = Matrix4::from_translation(Vector3::new(start.x, start.y, 0.0)) * Matrix4::from_angle_z(cgmath::Rad(angle)) * Matrix4::from_translation(Vector3::new(0.0, 0.5 * length, 0.0)) * Matrix4::from_nonuniform_scale(thickness, length, 1.0);
-        self.commands.push(DrawCommand {
-            mesh: Mesh::new_rectangle(),
-            image: Arc::new(Image::single_pixel(color)),
+            image: Some(img),
             transform,
             color: Color::NONE
         });

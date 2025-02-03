@@ -3,7 +3,7 @@ pub mod graphics;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use cgmath::Vector2;
+use glam::Vec2;
 use log::{debug, error};
 use crate::graphics::gpu::Display;
 use winit::application::ApplicationHandler;
@@ -16,7 +16,7 @@ use crate::graphics::draw::Renderer;
 #[derive(Debug)]
 pub enum InputEvent {
     KeyboardInput(DeviceId, KeyCode),
-    CursorMoved(DeviceId, Vector2<f32>)
+    CursorMoved(DeviceId, Vec2)
 }
 
 pub trait EventHandler {
@@ -171,7 +171,7 @@ impl ApplicationHandler for Raymond {
                 }
             }
             WindowEvent::CursorMoved { device_id, position } => {
-                self.handler.on_input_event(InputEvent::CursorMoved(device_id, Vector2::new(position.x as f32, position.y as f32)));
+                self.handler.on_input_event(InputEvent::CursorMoved(device_id, Vec2::new(position.x as f32, position.y as f32)));
             }
             _ => {
                 debug!("Unhandled window event: {:?}", event);
