@@ -1,33 +1,11 @@
-use bytemuck::{Pod, Zeroable};
-use crate::graphics::draw::Color;
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-pub struct Vertex {
-    pub position: [f32; 3],
-    pub uv: [f32; 2]
-}
-
-impl Vertex {
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                }
-            ]
-        }
-    }
-}
+use image::math::Rect;
+use lyon::math::Point;
+use lyon::path::traits::PathBuilder;
+use lyon::tessellation::{StrokeOptions, StrokeTessellator, StrokeVertex};
+use crate::graphics::gpu::Vertex;
+use lyon::lyon_tessellation::{BuffersBuilder, FillOptions, FillTessellator, FillVertex, VertexBuffers};
+use lyon::path::{Path, Winding};
+use lyon::math::{point, Box2D};
 
 #[derive(Clone, Debug)]
 pub struct Mesh {
@@ -43,49 +21,76 @@ pub struct Mesh {
 
 impl Mesh {
 
-    pub fn new_triangle() -> Self {
-        let vertices = vec![
-            Vertex { position: [-0.5, -0.5, 0.0], uv: [0.0, 1.0] }, // bottom left
-            Vertex { position: [0.0, 0.5, 0.0], uv: [0.5, 0.0] }, // top
-            Vertex { position: [0.5, -0.5, 0.0], uv: [1.0, 1.0] }, // bottom right
-        ];
-        let indices = vec![0, 1, 2];
-        Self { vertices, indices }
+    pub fn new_polygon(vertices: Vec<Point>) -> Self {
+        let mut builder = Path::builder();
+        builder.begin(vertices[0]);
+        for vertex in vertices.iter().skip(1) {
+            builder.line_to(*vertex);
+        }
+        builder.close();
+        Self::new_filled_path(builder.build())
     }
 
-    pub fn new_rectangle() -> Self {
-        let vertices = vec![
-            Vertex { position: [-0.5, 0.5, 0.0], uv: [0.0, 0.0] }, // top left
-            Vertex { position: [0.5, 0.5, 0.0], uv: [1.0, 0.0] }, // top right
-            Vertex { position: [-0.5, -0.5, 0.0], uv: [0.0, 1.0] }, // bottom left
-            Vertex { position: [0.5, -0.5, 0.0], uv: [1.0, 1.0] }, // bottom right
-        ];
-        let indices = vec![
-            0, 1, 2, // first triangle
-            2, 1, 3, // second triangle
-        ];
+    pub fn new_triangle() -> Self {
+        Self::new_polygon(vec![
+            Point::new(0.0, 0.5),
+            Point::new(0.5, -0.5),
+            Point::new(-0.5, -0.5)
+        ])
+    }
+
+    pub fn new_rectangle(width: f32, height: f32) -> Self {
+        let mut geometry: VertexBuffers<Vertex, u16> = VertexBuffers::new();
+        let mut tessellator = FillTessellator::new();
+        tessellator.tessellate_rectangle(  
+            &Box2D {
+                min: point(-1.0, -1.0),
+                max: point(1.0, 1.0),
+            },
+            &FillOptions::DEFAULT,
+            &mut BuffersBuilder::new(&mut geometry, |vertex: FillVertex| {
+                Vertex {
+                    position: [vertex.position().x, vertex.position().y, 0.0],
+                    uv: [0.0, 0.0],
+                }
+            }),
+        ).unwrap();
+
+        let indices = geometry.indices.clone();
+        let vertices = geometry.vertices.clone();
+
         Self { vertices, indices }
+
     }
 
     pub fn new_circle(radius: f32, segments: u16) -> Self {
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-        let center = Vertex { position: [0.0, 0.0, 0.0], uv: [0.5, 0.5] };
-        vertices.push(center);
-        for i in 0..segments {
-            let angle = 2.0 * std::f32::consts::PI / segments as f32 * i as f32;
-            let x = angle.cos() * radius;
-            let y = angle.sin() * radius;
-            vertices.push(Vertex { position: [x, y, 0.0], uv: [0.5 + x / 2.0, 0.5 + y / 2.0] });
-            if i > 0 {
-                indices.push(0);
-                indices.push(i + 1);
-                indices.push(i);
-            }
-        }
-        indices.push(0);
-        indices.push(1);
-        indices.push(segments);
+        let mut builder  = Path::builder();
+        builder.add_circle(point(0.0, 0.0), radius, Winding::Positive);
+        builder.close();
+        Self::new_filled_path(builder.build())
+    }
+
+    pub fn new_filled_path(path: Path) -> Mesh {
+        // Create a destination vertex and index buffers.
+        let mut geometry: VertexBuffers<Vertex, u16> = VertexBuffers::new();
+
+        // Create the destination tessellator.
+        let mut tessellator = FillTessellator::new();
+
+        tessellator.tessellate_path(
+            &path,
+            &FillOptions::default(),
+            &mut BuffersBuilder::new(&mut geometry, |vertex: FillVertex| {
+                Vertex {
+                    position: [vertex.position().x, vertex.position().y, 0.0],
+                    uv: [0.0, 0.0],
+                }
+            }),
+        ).unwrap();
+
+        let indices = geometry.indices.clone();
+        let vertices = geometry.vertices.clone();
+
         Self { vertices, indices }
     }
 

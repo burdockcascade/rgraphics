@@ -21,7 +21,7 @@ impl Transform2D {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
@@ -136,7 +136,7 @@ impl Renderer {
 
     pub fn draw_rectangle(&mut self, transform: Transform2D, dimension: Vec2, color: Color) -> &mut Self {
         self.commands.push(DrawCommand::Mesh2D {
-            mesh: Mesh::new_rectangle(),
+            mesh: Mesh::new_rectangle(dimension.x, dimension.y),
             image: None,
             transform,
             color
@@ -156,7 +156,7 @@ impl Renderer {
 
     pub fn draw_image(&mut self, transform: Transform2D, img: Arc<Image>) -> &mut Self {
         self.commands.push(DrawCommand::Mesh2D {
-            mesh: Mesh::new_rectangle(),
+            mesh: Mesh::new_rectangle(img.image.width() as f32, img.image.height() as f32),
             image: Some(img),
             transform,
             color: Color::NONE

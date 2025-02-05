@@ -11,6 +11,7 @@ winit = "0.30"
 pollster = "0.4"
 bytemuck = { version = "1.21", features = ["derive"] }
 image = { version = "0.25", default-features = false, features = [ "jpeg"] }
+lyon = "1.0"
 
 [dev-dependencies]
 simplelog = "0.12"

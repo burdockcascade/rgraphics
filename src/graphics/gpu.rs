@@ -3,15 +3,42 @@ use std::collections::HashMap;
 use crate::graphics::draw::{Color, DrawCommand, Image, Renderer};
 use bytemuck::{Pod, Zeroable};
 use image::{DynamicImage,  RgbaImage};
-use log::{debug, info, warn};
+use log::warn;
 use pollster::FutureExt;
 use std::sync::Arc;
-use glam::{vec4, Mat4, Vec2, Vec3};
+use glam::Mat4;
 use wgpu::util::DeviceExt;
 use wgpu::{Adapter, AdapterInfo, BindGroup, BindGroupLayout, Buffer, Device, Instance, PresentMode, Queue, Surface, SurfaceCapabilities};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
-use crate::graphics::mesh::Vertex;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct Vertex {
+    pub position: [f32; 3],
+    pub uv: [f32; 2]
+}
+
+impl Vertex {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                }
+            ]
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
